@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 220 20% 6%;
+    --foreground: 40 20% 92%;
+
+    --card: 220 18% 10%;
+    --card-foreground: 40 20% 92%;
+
+    --popover: 220 18% 10%;
+    --popover-foreground: 40 20% 92%;
+
+    --primary: 43 96% 56%;
+    --primary-foreground: 220 20% 6%;
+
+    --secondary: 220 16% 16%;
+    --secondary-foreground: 40 15% 80%;
+
+    --muted: 220 14% 14%;
+    --muted-foreground: 220 10% 50%;
+
+    --accent: 43 80% 45%;
+    --accent-foreground: 220 20% 6%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 14% 18%;
+    --input: 220 14% 18%;
+    --ring: 43 96% 56%;
+
+    --radius: 0.75rem;
+
+    --chart-gold: 43 96% 56%;
+    --chart-silver: 220 10% 70%;
+    --chart-platinum: 200 15% 60%;
+    --chart-palladium: 25 60% 50%;
+
+    --gradient-gold: linear-gradient(135deg, hsl(43 96% 56%), hsl(35 90% 45%));
+    --gradient-card: linear-gradient(135deg, hsl(220 18% 12%), hsl(220 18% 8%));
+    --gradient-hero: linear-gradient(180deg, hsl(220 20% 8%), hsl(220 20% 4%));
+
+    --shadow-gold: 0 0 30px -5px hsl(43 96% 56% / 0.15);
+    --shadow-card: 0 4px 24px -4px hsl(0 0% 0% / 0.3);
+
+    --sidebar-background: 220 18% 10%;
+    --sidebar-foreground: 40 20% 92%;
+    --sidebar-primary: 43 96% 56%;
+    --sidebar-primary-foreground: 220 20% 6%;
+    --sidebar-accent: 220 16% 16%;
+    --sidebar-accent-foreground: 40 15% 80%;
+    --sidebar-border: 220 14% 18%;
+    --sidebar-ring: 43 96% 56%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+}
+
+@layer utilities {
+  .text-gradient-gold {
+    background: linear-gradient(135deg, hsl(43 96% 56%), hsl(35 90% 65%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-gradient-card {
+    background: var(--gradient-card);
+  }
+
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .shadow-gold {
+    box-shadow: var(--shadow-gold);
+  }
+
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 20px hsl(43 96% 56% / 0.2), 0 0 60px hsl(43 96% 56% / 0.1);
+  }
+}
