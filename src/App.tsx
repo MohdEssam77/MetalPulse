@@ -6,7 +6,22 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Data stays fresh for 2 minutes (won't refetch if accessed within this time)
+      staleTime: 120_000, // 2 minutes
+      // Keep data in cache for 5 minutes even when component unmounts
+      gcTime: 300_000, // 5 minutes (formerly cacheTime)
+      // Don't refetch when window regains focus (saves API calls)
+      refetchOnWindowFocus: false,
+      // Don't refetch on reconnect (saves API calls)
+      refetchOnReconnect: false,
+      // Retry failed requests once
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

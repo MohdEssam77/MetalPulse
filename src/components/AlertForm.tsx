@@ -1,20 +1,38 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Bell, Mail, ArrowUp, ArrowDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { METALS_DATA, ETFS_DATA } from "@/lib/metals-data";
+import { useMetals } from "@/hooks/use-metals";
+import { useEtfs } from "@/hooks/use-etfs";
 import { toast } from "sonner";
 
 const AlertForm = () => {
   const [email, setEmail] = useState("");
-  const [selectedAsset, setSelectedAsset] = useState(METALS_DATA[0].id);
   const [targetPrice, setTargetPrice] = useState("");
   const [direction, setDirection] = useState<"above" | "below">("above");
 
-  const allAssets = [
-    ...METALS_DATA.map((m) => ({ id: m.id, label: `${m.name} (${m.symbol})`, price: m.price })),
-    ...ETFS_DATA.map((e) => ({ id: e.symbol.toLowerCase(), label: `${e.name} (${e.symbol})`, price: e.price })),
-  ];
+  // Use live data instead of dummy data
+  const { data: liveMetals } = useMetals();
+  const { data: liveEtfs } = useEtfs();
+
+  // Use live data if available, fallback to dummy data
+  const metals = liveMetals && liveMetals.length > 0 ? liveMetals : METALS_DATA;
+  const etfs = liveEtfs && liveEtfs.length > 0 ? liveEtfs : ETFS_DATA;
+
+  const allAssets = useMemo(
+    () => [
+      ...metals.map((m) => ({ id: m.id, label: `${m.name} (${m.symbol})`, price: m.price })),
+      ...etfs.map((e) => ({
+        id: e.symbol.toLowerCase(),
+        label: `${e.name} (${e.symbol})`,
+        price: e.price,
+      })),
+    ],
+    [metals, etfs],
+  );
+
+  const [selectedAsset, setSelectedAsset] = useState(allAssets[0]?.id ?? METALS_DATA[0].id);
 
   const currentAsset = allAssets.find((a) => a.id === selectedAsset) ?? allAssets[0];
 

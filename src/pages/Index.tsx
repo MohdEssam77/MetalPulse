@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Navbar from "@/components/Navbar";
 import MetalCard from "@/components/MetalCard";
 import PriceChart from "@/components/PriceChart";
@@ -8,15 +8,44 @@ import Footer from "@/components/Footer";
 import { METALS_DATA } from "@/lib/metals-data";
 import { useMetals } from "@/hooks/use-metals";
 import { TrendingUp, Shield, Bell } from "lucide-react";
+import type { MetalData } from "@/lib/metals-data";
 
 const Index = () => {
-  const { data: liveMetals, isLoading, isError, error } = useMetals();
+  const { data: liveMetals, isLoading, isError, error, dataUpdatedAt, isRefetching } = useMetals();
   
-  // Check if live data is valid (has at least one metal with price > 0)
-  const hasValidLiveData = liveMetals && liveMetals.length > 0 && liveMetals.some((m) => m.price > 0);
-  const metals = hasValidLiveData ? liveMetals : METALS_DATA;
+  // Store the last valid data we received
+  const lastValidDataRef = useRef<MetalData[] | null>(null);
+  
+  // Check if live data is valid (all metals must have realistic prices)
+  const isValidData = (data: MetalData[] | undefined): boolean => {
+    return !!(
+      data &&
+      data.length === 4 &&
+      data.every((m) => m.price > 0 && m.price < 100000)
+    );
+  };
+  
+  // Update last valid data if current data is valid
+  if (liveMetals && isValidData(liveMetals)) {
+    lastValidDataRef.current = liveMetals;
+  }
+  
+  // Use live data if valid, otherwise use last valid data, otherwise fall back to dummy data
+  const metals =
+    (liveMetals && isValidData(liveMetals)
+      ? liveMetals
+      : lastValidDataRef.current) || METALS_DATA;
   
   const [selectedMetalId, setSelectedMetalId] = useState<string | null>(metals[0]?.id ?? null);
+  
+  // Format last update time
+  const lastUpdateTime = dataUpdatedAt
+    ? new Date(dataUpdatedAt).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : null;
 
   useEffect(() => {
     if (!selectedMetalId && metals.length > 0) {
@@ -65,23 +94,38 @@ const Index = () => {
       {/* Prices */}
       <section id="prices" className="py-12">
         <div className="container mx-auto px-4">
-          <h2 className="mb-6 font-display text-2xl font-bold text-foreground">
-            Spot Prices
-          </h2>
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="font-display text-2xl font-bold text-foreground">
+              Spot Prices
+            </h2>
+            {lastUpdateTime && (
+              <div className="text-xs text-muted-foreground">
+                {isRefetching && <span className="text-yellow-400">🔄 Refreshing...</span>}
+                {!isRefetching && isValidData(liveMetals) && (
+                  <span>Last updated: {lastUpdateTime}</span>
+                )}
+                {!isRefetching && !isValidData(liveMetals) && lastValidDataRef.current && (
+                  <span className="text-yellow-400">
+                    Using cached data (last valid: {lastUpdateTime})
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
           {isLoading && (
             <p className="mb-2 text-sm text-muted-foreground">Loading live metal prices…</p>
           )}
           {isError && (
             <p className="mb-2 text-sm text-red-400">
-              Couldn&apos;t load live metal prices. Showing sample data instead.
+              Couldn&apos;t load live metal prices. {lastValidDataRef.current ? "Showing cached data." : "Showing sample data."}
               {error instanceof Error && (
                 <span className="block text-xs mt-1 opacity-75">{error.message}</span>
               )}
             </p>
           )}
-          {!isLoading && !isError && !hasValidLiveData && liveMetals && liveMetals.length > 0 && (
+          {!isLoading && !isError && liveMetals && !isValidData(liveMetals) && (
             <p className="mb-2 text-sm text-yellow-400">
-              API returned invalid data (all prices are $0.00). Showing sample data instead.
+              ⚠️ API returned invalid data. {lastValidDataRef.current ? "Showing last valid data." : "Showing sample data."}
             </p>
           )}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
