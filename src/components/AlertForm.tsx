@@ -5,18 +5,18 @@ import { Input } from "@/components/ui/input";
 import { METALS_DATA, ETFS_DATA } from "@/lib/metals-data";
 import { toast } from "sonner";
 
-const allAssets = [
-  ...METALS_DATA.map((m) => ({ id: m.id, label: `${m.name} (${m.symbol})`, price: m.price })),
-  ...ETFS_DATA.map((e) => ({ id: e.symbol.toLowerCase(), label: `${e.name} (${e.symbol})`, price: e.price })),
-];
-
 const AlertForm = () => {
   const [email, setEmail] = useState("");
-  const [selectedAsset, setSelectedAsset] = useState(allAssets[0].id);
+  const [selectedAsset, setSelectedAsset] = useState(METALS_DATA[0].id);
   const [targetPrice, setTargetPrice] = useState("");
   const [direction, setDirection] = useState<"above" | "below">("above");
 
-  const currentAsset = allAssets.find((a) => a.id === selectedAsset)!;
+  const allAssets = [
+    ...METALS_DATA.map((m) => ({ id: m.id, label: `${m.name} (${m.symbol})`, price: m.price })),
+    ...ETFS_DATA.map((e) => ({ id: e.symbol.toLowerCase(), label: `${e.name} (${e.symbol})`, price: e.price })),
+  ];
+
+  const currentAsset = allAssets.find((a) => a.id === selectedAsset) ?? allAssets[0];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

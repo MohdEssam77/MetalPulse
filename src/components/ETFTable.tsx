@@ -1,7 +1,11 @@
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { ETFS_DATA } from "@/lib/metals-data";
+import { useEtfs } from "@/hooks/use-etfs";
 
 const ETFTable = () => {
+  const { data, isLoading, isError } = useEtfs();
+  const etfs = data && data.length > 0 ? data : ETFS_DATA;
+
   return (
     <div className="rounded-xl border border-border bg-gradient-card p-6">
       <h3 className="mb-4 font-display text-lg font-semibold text-foreground">
@@ -18,7 +22,7 @@ const ETFTable = () => {
             </tr>
           </thead>
           <tbody>
-            {ETFS_DATA.map((etf) => {
+            {etfs.map((etf) => {
               const isPositive = etf.change >= 0;
               return (
                 <tr
@@ -49,6 +53,14 @@ const ETFTable = () => {
           </tbody>
         </table>
       </div>
+      {isLoading && (
+        <p className="mt-2 text-xs text-muted-foreground">Loading live ETF data…</p>
+      )}
+      {isError && (
+        <p className="mt-2 text-xs text-red-400">
+          Couldn&apos;t load live ETF data. Showing sample prices instead.
+        </p>
+      )}
     </div>
   );
 };
