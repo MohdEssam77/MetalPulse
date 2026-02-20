@@ -28,6 +28,13 @@ export interface EtfQuote {
   changePercent: number;
 }
 
+function invertRateToUsdPerOunce(rate: number): number {
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return 0;
+  }
+  return 1 / rate;
+}
+
 function validateMetalsData(data: MetalData[]): boolean {
   // Validate that we have data for all 4 metals and all prices are realistic
   if (!data || data.length !== 4) {
@@ -129,6 +136,10 @@ async function fetchMetalsDataFromGoldAPI(apiKey: string): Promise<MetalData[]> 
   // GoldAPI provides real-time data with change included
   // Try "latest" first, fallback to today's date
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // Format: YYYYMMDD
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, "");
 
   const metalPromises = metalSymbols.map(async (meta) => {
     // Try latest endpoint first (if available), then today's date
@@ -176,10 +187,40 @@ async function fetchMetalsDataFromGoldAPI(apiKey: string): Promise<MetalData[]> 
           continue;
         }
 
-        // GoldAPI provides change values - use them directly
-        // ch = change amount, chp = change percent
-        const change = data.ch ?? 0;
-        const changePercent = data.chp ?? 0;
+        // GoldAPI provides change values - use them directly when present.
+        // Some plans/endpoints omit ch/chp, so compute change from yesterday as a fallback.
+        let change = typeof data.ch === "number" ? data.ch : 0;
+        let changePercent = typeof data.chp === "number" ? data.chp : 0;
+
+        if ((data.ch == null || data.chp == null) && price > 0) {
+          try {
+            const yesterdayUrl = `${GOLDAPI_BASE_URL}/${meta.symbol}/USD/${yesterday}`;
+            const yesterdayRes = await fetch(yesterdayUrl, {
+              headers: {
+                "x-access-token": apiKey,
+              },
+            });
+
+            if (yesterdayRes.ok) {
+              const y: {
+                price?: number;
+                ask?: number;
+                bid?: number;
+                error?: string;
+              } = await yesterdayRes.json();
+
+              if (!y.error) {
+                const yesterdayPrice = y.price ?? y.ask ?? y.bid ?? 0;
+                if (typeof yesterdayPrice === "number" && yesterdayPrice > 0) {
+                  change = price - yesterdayPrice;
+                  changePercent = (change / yesterdayPrice) * 100;
+                }
+              }
+            }
+          } catch {
+            // If fallback fails, keep change at 0
+          }
+        }
 
         // If change values are 0 but we have a price, log it for debugging
         if (change === 0 && changePercent === 0 && price > 0) {
@@ -287,17 +328,20 @@ async function fetchMetalsDataFromMetalpriceAPI(apiKey: string): Promise<MetalDa
 
   const metalData = await Promise.all(metalSymbols.map(async (meta) => {
     // Use USDXAU format (USD per ounce) instead of XAU (ounces per USD)
-    const usdSymbol = `USD${meta.symbol}`;
-    const latestPrice = latestJson.rates?.[usdSymbol];
-    const price = typeof latestPrice === "number" && latestPrice > 0 ? latestPrice : 0;
+    // MetalpriceAPI returns rates for `base=USD` as metal-per-USD (e.g. XAU per USD).
+    // Convert to USD per ounce by inverting.
+    const latestRate = latestJson.rates?.[meta.symbol];
+    const price = typeof latestRate === "number" ? invertRateToUsdPerOunce(latestRate) : 0;
 
     // Calculate change from yesterday's price (FREE TIER method)
     let change = 0;
     let changePct = 0;
 
     if (Object.keys(yesterdayRates).length > 0) {
-      const yesterdayPrice = yesterdayRates[usdSymbol];
-      if (typeof yesterdayPrice === "number" && yesterdayPrice > 0 && price > 0) {
+      const yesterdayRate = yesterdayRates[meta.symbol];
+      const yesterdayPrice =
+        typeof yesterdayRate === "number" ? invertRateToUsdPerOunce(yesterdayRate) : 0;
+      if (yesterdayPrice > 0 && price > 0) {
         change = price - yesterdayPrice;
         changePct = (change / yesterdayPrice) * 100;
         
@@ -333,8 +377,10 @@ async function fetchMetalsDataFromMetalpriceAPI(apiKey: string): Promise<MetalDa
           } = await twoDaysAgoRes.json();
           
           if (twoDaysAgoJson.success && twoDaysAgoJson.rates) {
-            const twoDaysAgoPrice = twoDaysAgoJson.rates[usdSymbol];
-            if (typeof twoDaysAgoPrice === "number" && twoDaysAgoPrice > 0 && price > 0) {
+            const twoDaysAgoRate = twoDaysAgoJson.rates[meta.symbol];
+            const twoDaysAgoPrice =
+              typeof twoDaysAgoRate === "number" ? invertRateToUsdPerOunce(twoDaysAgoRate) : 0;
+            if (twoDaysAgoPrice > 0 && price > 0) {
               change = price - twoDaysAgoPrice;
               changePct = (change / twoDaysAgoPrice) * 100;
               console.log(
@@ -401,20 +447,20 @@ export async function fetchHistoricalMetalData(
       if (res.ok) {
         const json: {
           success?: boolean;
-          rates?: Record<string, Record<string, Record<string, number>>>;
+          rates?: Record<string, Record<string, number>>;
         } = await res.json();
 
         if (json.success && json.rates) {
           const dataPoints: ChartDataPoint[] = [];
-          const usdSymbol = `USD${symbol}`;
 
           // Sort dates and extract prices
           Object.keys(json.rates)
             .sort()
             .forEach((dateStr) => {
               const dayRates = json.rates![dateStr];
-              const price = dayRates[usdSymbol];
-              if (typeof price === "number" && price > 0) {
+              const rate = dayRates[symbol];
+              const price = typeof rate === "number" ? invertRateToUsdPerOunce(rate) : 0;
+              if (price > 0) {
                 const date = new Date(dateStr);
                 dataPoints.push({
                   date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
