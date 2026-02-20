@@ -10,6 +10,14 @@ export interface MetalData {
   color: string;
 }
 
+export interface EtfData {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+}
+
 export interface ChartDataPoint {
   date: string;
   price: number;
@@ -84,7 +92,7 @@ export const generateChartData = (basePrice: number, days: number = 30): ChartDa
   return data;
 };
 
-export const ETFS_DATA = [
+export const ETFS_DATA: EtfData[] = [
   { symbol: 'GLD', name: 'SPDR Gold Shares', price: 271.45, change: 1.82, changePercent: 0.67 },
   { symbol: 'SLV', name: 'iShares Silver Trust', price: 29.30, change: -0.35, changePercent: -1.18 },
   { symbol: 'PPLT', name: 'abrdn Platinum ETF', price: 92.15, change: 0.48, changePercent: 0.52 },

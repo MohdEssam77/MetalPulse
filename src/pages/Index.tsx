@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import MetalCard from "@/components/MetalCard";
 import PriceChart from "@/components/PriceChart";
@@ -6,10 +6,25 @@ import ETFTable from "@/components/ETFTable";
 import AlertForm from "@/components/AlertForm";
 import Footer from "@/components/Footer";
 import { METALS_DATA } from "@/lib/metals-data";
+import { useMetals } from "@/hooks/use-metals";
 import { TrendingUp, Shield, Bell } from "lucide-react";
 
 const Index = () => {
-  const [selectedMetal, setSelectedMetal] = useState(METALS_DATA[0]);
+  const { data: liveMetals, isLoading, isError, error } = useMetals();
+  
+  // Check if live data is valid (has at least one metal with price > 0)
+  const hasValidLiveData = liveMetals && liveMetals.length > 0 && liveMetals.some((m) => m.price > 0);
+  const metals = hasValidLiveData ? liveMetals : METALS_DATA;
+  
+  const [selectedMetalId, setSelectedMetalId] = useState<string | null>(metals[0]?.id ?? null);
+
+  useEffect(() => {
+    if (!selectedMetalId && metals.length > 0) {
+      setSelectedMetalId(metals[0].id);
+    }
+  }, [metals, selectedMetalId]);
+
+  const selectedMetal = metals.find((m) => m.id === selectedMetalId) ?? metals[0];
 
   return (
     <div className="min-h-screen bg-background">
@@ -53,13 +68,29 @@ const Index = () => {
           <h2 className="mb-6 font-display text-2xl font-bold text-foreground">
             Spot Prices
           </h2>
+          {isLoading && (
+            <p className="mb-2 text-sm text-muted-foreground">Loading live metal prices…</p>
+          )}
+          {isError && (
+            <p className="mb-2 text-sm text-red-400">
+              Couldn&apos;t load live metal prices. Showing sample data instead.
+              {error instanceof Error && (
+                <span className="block text-xs mt-1 opacity-75">{error.message}</span>
+              )}
+            </p>
+          )}
+          {!isLoading && !isError && !hasValidLiveData && liveMetals && liveMetals.length > 0 && (
+            <p className="mb-2 text-sm text-yellow-400">
+              API returned invalid data (all prices are $0.00). Showing sample data instead.
+            </p>
+          )}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {METALS_DATA.map((metal) => (
+            {metals.map((metal) => (
               <MetalCard
                 key={metal.id}
                 metal={metal}
-                isSelected={selectedMetal.id === metal.id}
-                onClick={() => setSelectedMetal(metal)}
+                isSelected={selectedMetal?.id === metal.id}
+                onClick={() => setSelectedMetalId(metal.id)}
               />
             ))}
           </div>
