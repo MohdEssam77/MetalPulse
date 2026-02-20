@@ -178,8 +178,8 @@ async function fetchMetalsDataFromGoldAPI(apiKey: string): Promise<MetalData[]> 
 
         // GoldAPI provides change values - use them directly
         // ch = change amount, chp = change percent
-        let change = data.ch ?? 0;
-        let changePercent = data.chp ?? 0;
+        const change = data.ch ?? 0;
+        const changePercent = data.chp ?? 0;
 
         // If change values are 0 but we have a price, log it for debugging
         if (change === 0 && changePercent === 0 && price > 0) {
@@ -285,7 +285,7 @@ async function fetchMetalsDataFromMetalpriceAPI(apiKey: string): Promise<MetalDa
     console.warn("Failed to fetch yesterday's prices for change calculation:", error);
   }
 
-  return metalSymbols.map((meta) => {
+  const metalData = await Promise.all(metalSymbols.map(async (meta) => {
     // Use USDXAU format (USD per ounce) instead of XAU (ounces per USD)
     const usdSymbol = `USD${meta.symbol}`;
     const latestPrice = latestJson.rates?.[usdSymbol];
@@ -367,7 +367,9 @@ async function fetchMetalsDataFromMetalpriceAPI(apiKey: string): Promise<MetalDa
       low24h: Math.round(low24h * 100) / 100,
       color: meta.color,
     };
-  });
+  }));
+
+  return metalData;
 }
 
 export async function fetchHistoricalMetalData(
@@ -459,53 +461,60 @@ export async function fetchEtfQuotes(): Promise<EtfQuote[]> {
         return null;
       }
 
-      const payload = (await res.json()) as any;
+      const payload: unknown = await res.json();
+
+      if (!payload || typeof payload !== "object") {
+        console.warn(`Unexpected response for ${etf.symbol}:`, payload);
+        return null;
+      }
+
+      const data = payload as Record<string, unknown>;
 
       // Handle error responses from Twelve Data
-      if (payload.status === "error" || payload.code) {
-        console.warn(`Error for ${etf.symbol}:`, payload.message || payload.info);
+      if (data.status === "error" || data.code) {
+        console.warn(`Error for ${etf.symbol}:`, data.message || data.info);
         return null;
       }
 
       // Extract price (try multiple possible fields)
       const price =
-        typeof payload.close === "string"
-          ? parseFloat(payload.close)
-          : typeof payload.close === "number"
-            ? payload.close
-            : typeof payload.price === "string"
-              ? parseFloat(payload.price)
-              : typeof payload.price === "number"
-                ? payload.price
-                : typeof payload.last === "string"
-                  ? parseFloat(payload.last)
-                  : typeof payload.last === "number"
-                    ? payload.last
+        typeof data.close === "string"
+          ? parseFloat(data.close)
+          : typeof data.close === "number"
+            ? data.close
+            : typeof data.price === "string"
+              ? parseFloat(data.price)
+              : typeof data.price === "number"
+                ? data.price
+                : typeof data.last === "string"
+                  ? parseFloat(data.last)
+                  : typeof data.last === "number"
+                    ? data.last
                     : 0;
 
       // Extract change
       const change =
-        typeof payload.change === "string"
-          ? parseFloat(payload.change)
-          : typeof payload.change === "number"
-            ? payload.change
+        typeof data.change === "string"
+          ? parseFloat(data.change)
+          : typeof data.change === "number"
+            ? data.change
             : 0;
 
       // Extract percent change
       const changePercent =
-        typeof payload.percent_change === "string"
-          ? parseFloat(payload.percent_change)
-          : typeof payload.percent_change === "number"
-            ? payload.percent_change
-            : typeof payload.change_percent === "string"
-              ? parseFloat(payload.change_percent)
-              : typeof payload.change_percent === "number"
-                ? payload.change_percent
+        typeof data.percent_change === "string"
+          ? parseFloat(data.percent_change)
+          : typeof data.percent_change === "number"
+            ? data.percent_change
+            : typeof data.change_percent === "string"
+              ? parseFloat(data.change_percent)
+              : typeof data.change_percent === "number"
+                ? data.change_percent
                 : 0;
 
       return {
         symbol: etf.symbol,
-        name: payload.name ?? etf.name ?? etf.symbol,
+        name: (typeof data.name === "string" ? data.name : undefined) ?? etf.name ?? etf.symbol,
         price: Math.round(price * 100) / 100,
         change: Math.round(change * 100) / 100,
         changePercent: Math.round(changePercent * 100) / 100,
