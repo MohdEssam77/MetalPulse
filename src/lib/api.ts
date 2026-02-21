@@ -4,6 +4,9 @@ const METALPRICE_BASE_URL = "https://api.metalpriceapi.com/v1";
 const GOLDAPI_BASE_URL = "https://www.goldapi.io/api";
 const TWELVEDATA_BASE_URL = "https://api.twelvedata.com";
 
+let twelveDataMetalsDisabledUntil = 0;
+let goldApiDisabledUntil = 0;
+
 const metalSymbols = [
   { id: "gold", name: "Gold", symbol: "XAU", color: "gold" },
   { id: "silver", name: "Silver", symbol: "XAG", color: "silver" },
@@ -33,6 +36,151 @@ function invertRateToUsdPerOunce(rate: number): number {
     return 0;
   }
   return 1 / rate;
+}
+
+function toTwelveDataMetalSymbol(symbol: string): string {
+  // Twelve Data uses forex-style symbols for metals
+  // Example: XAU/USD
+  return `${symbol}/USD`;
+}
+
+async function fetchDailyMetalSeriesFromTwelveData(
+  apiKey: string,
+  symbol: string,
+  days: number,
+): Promise<{ points: ChartDataPoint[]; lastClose: number; prevClose: number | null }> {
+  const tdSymbol = toTwelveDataMetalSymbol(symbol);
+
+  // Request a few extra points to be safe (weekends/holidays)
+  const outputsize = Math.max(days + 5, 10);
+  const url = `${TWELVEDATA_BASE_URL}/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=1day&outputsize=${outputsize}&apikey=${encodeURIComponent(apiKey)}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Twelve Data time_series failed for ${tdSymbol}: ${res.status} ${res.statusText} - ${errorText}`);
+  }
+
+  const payload: unknown = await res.json();
+  if (!payload || typeof payload !== "object") {
+    throw new Error(`Twelve Data returned unexpected payload for ${tdSymbol}`);
+  }
+
+  const data = payload as Record<string, unknown>;
+  if (data.status === "error" || data.code) {
+    throw new Error(
+      `Twelve Data error for ${tdSymbol}: ${String(data.message ?? data.info ?? "unknown error")}`,
+    );
+  }
+
+  const values = data.values;
+  if (!Array.isArray(values)) {
+    throw new Error(`Twelve Data time_series missing values for ${tdSymbol}`);
+  }
+
+  // Twelve Data returns newest-first; we want oldest-first
+  const parsed = values
+    .map((v) => (v && typeof v === "object" ? (v as Record<string, unknown>) : null))
+    .filter((v): v is Record<string, unknown> => !!v)
+    .map((v) => {
+      const dt = typeof v.datetime === "string" ? v.datetime : null;
+      const closeRaw = v.close;
+      const close =
+        typeof closeRaw === "string" ? parseFloat(closeRaw) : typeof closeRaw === "number" ? closeRaw : NaN;
+      return { dt, close };
+    })
+    .filter((p) => !!p.dt && Number.isFinite(p.close) && p.close > 0);
+
+  if (parsed.length === 0) {
+    throw new Error(`Twelve Data time_series returned no usable points for ${tdSymbol}`);
+  }
+
+  const asc = [...parsed].reverse();
+  const trimmed = asc.slice(Math.max(asc.length - (days + 1), 0));
+
+  const points: ChartDataPoint[] = trimmed.map((p) => {
+    const date = new Date(p.dt!);
+    return {
+      date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      price: Math.round(p.close * 100) / 100,
+    };
+  });
+
+  const lastClose = trimmed[trimmed.length - 1]?.close ?? 0;
+  const prevClose = trimmed.length >= 2 ? trimmed[trimmed.length - 2]!.close : null;
+
+  return {
+    points,
+    lastClose: Math.round(lastClose * 100) / 100,
+    prevClose: prevClose != null ? Math.round(prevClose * 100) / 100 : null,
+  };
+}
+
+async function fetchDailyMetalSeriesFromMetalpriceAPI(
+  apiKey: string,
+  symbol: string,
+  days: number,
+): Promise<{ points: ChartDataPoint[]; lastClose: number; prevClose: number | null }> {
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - (days + 7));
+
+  const startDateStr = startDate.toISOString().slice(0, 10);
+  const endDateStr = endDate.toISOString().slice(0, 10);
+
+  const url = `${METALPRICE_BASE_URL}/timeframe?api_key=${encodeURIComponent(
+    apiKey,
+  )}&start_date=${startDateStr}&end_date=${endDateStr}&base=USD&currencies=${symbol}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(
+      `MetalpriceAPI timeframe failed for ${symbol}: ${res.status} ${res.statusText} - ${errorText}`,
+    );
+  }
+
+  const json: {
+    success?: boolean;
+    rates?: Record<string, Record<string, number>>;
+    error?: { code: number; info: string };
+  } = await res.json();
+
+  if (!json.success || !json.rates) {
+    const msg = json.error?.info ?? "MetalpriceAPI returned an error.";
+    throw new Error(`MetalpriceAPI timeframe error for ${symbol}: ${msg}`);
+  }
+
+  const pointsAll: Array<{ dt: string; close: number }> = Object.keys(json.rates)
+    .sort()
+    .map((dt) => {
+      const rate = json.rates?.[dt]?.[symbol];
+      const close = typeof rate === "number" ? invertRateToUsdPerOunce(rate) : 0;
+      return { dt, close };
+    })
+    .filter((p) => Number.isFinite(p.close) && p.close > 0);
+
+  if (pointsAll.length === 0) {
+    throw new Error(`MetalpriceAPI timeframe returned no usable points for ${symbol}`);
+  }
+
+  const trimmed = pointsAll.slice(Math.max(pointsAll.length - (days + 1), 0));
+  const points: ChartDataPoint[] = trimmed.map((p) => {
+    const date = new Date(p.dt);
+    return {
+      date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      price: Math.round(p.close * 100) / 100,
+    };
+  });
+
+  const lastClose = trimmed[trimmed.length - 1]?.close ?? 0;
+  const prevClose = trimmed.length >= 2 ? trimmed[trimmed.length - 2]!.close : null;
+
+  return {
+    points,
+    lastClose: Math.round(lastClose * 100) / 100,
+    prevClose: prevClose != null ? Math.round(prevClose * 100) / 100 : null,
+  };
 }
 
 function validateMetalsData(data: MetalData[]): boolean {
@@ -86,13 +234,139 @@ function sanitizeChangeValues(metal: MetalData): MetalData {
   return metal;
 }
 
+async function fetchMetalsDataFromLocalScraper(): Promise<MetalData[]> {
+  const res = await fetch("/api/metals");
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Local scraper error: ${res.status} ${res.statusText} - ${errorText}`);
+  }
+
+  const payload: unknown = await res.json();
+  if (!Array.isArray(payload)) {
+    throw new Error("Local scraper returned unexpected payload");
+  }
+
+  const colorById: Record<string, string> = {
+    gold: "gold",
+    silver: "silver",
+    platinum: "platinum",
+    palladium: "palladium",
+  };
+
+  const data = payload
+    .map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>) : null))
+    .filter((v): v is Record<string, unknown> => !!v)
+    .map((m) => {
+      const id = typeof m.id === "string" ? m.id : "";
+      const name = typeof m.name === "string" ? m.name : "";
+      const symbol = typeof m.symbol === "string" ? m.symbol : "";
+      const price = typeof m.price === "number" ? m.price : NaN;
+      const change = typeof m.change === "number" ? m.change : 0;
+      const changePercent = typeof m.changePercent === "number" ? m.changePercent : 0;
+      const high24h = typeof m.high24h === "number" ? m.high24h : price;
+      const low24h = typeof m.low24h === "number" ? m.low24h : price;
+
+      return {
+        id,
+        name,
+        symbol,
+        price,
+        change,
+        changePercent,
+        high24h,
+        low24h,
+        color: colorById[id] ?? "gold",
+      } satisfies MetalData;
+    });
+
+  return data;
+}
+
+async function fetchHistoricalMetalDataFromLocalScraper(symbol: string, days: number): Promise<ChartDataPoint[]> {
+  const res = await fetch(`/api/metals/${encodeURIComponent(symbol)}/history?days=${encodeURIComponent(String(days))}`);
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Local scraper error: ${res.status} ${res.statusText} - ${errorText}`);
+  }
+  const payload: unknown = await res.json();
+  if (!Array.isArray(payload)) {
+    throw new Error("Local scraper returned unexpected payload");
+  }
+  return payload
+    .map((p) => (p && typeof p === "object" ? (p as Record<string, unknown>) : null))
+    .filter((p): p is Record<string, unknown> => !!p)
+    .map((p) => ({
+      date: typeof p.date === "string" ? p.date : "",
+      price: typeof p.price === "number" ? p.price : NaN,
+    }))
+    .filter((p) => !!p.date && Number.isFinite(p.price) && p.price > 0);
+}
+
 export async function fetchMetalsData(): Promise<MetalData[]> {
-  // Try GoldAPI first (more real-time), fallback to MetalpriceAPI
+  // Option A: Use Twelve Data for metals (spot + historical) to keep cards and chart consistent.
+  // Fallbacks: GoldAPI -> MetalpriceAPI
+  const twelveDataApiKey = import.meta.env.VITE_TWELVEDATA_API_KEY;
   const goldApiKey = import.meta.env.VITE_GOLDAPI_API_KEY;
   const metalpriceApiKey = import.meta.env.VITE_METALPRICE_API_KEY;
 
+  try {
+    const local = await fetchMetalsDataFromLocalScraper();
+    const sanitizedLocal = local.map(sanitizeChangeValues);
+    if (validateMetalsData(sanitizedLocal)) {
+      console.log("✅ Local scraper: Valid metals data received");
+      return sanitizedLocal;
+    }
+  } catch (error) {
+    console.warn("❌ Local scraper: Request failed, falling back to other providers:", error);
+  }
+
+  if (twelveDataApiKey && Date.now() >= twelveDataMetalsDisabledUntil) {
+    try {
+      const results = await Promise.all(
+        metalSymbols.map(async (meta) => {
+          const series = await fetchDailyMetalSeriesFromTwelveData(twelveDataApiKey, meta.symbol, 30);
+
+          const price = series.lastClose;
+          const change = series.prevClose != null ? price - series.prevClose : 0;
+          const changePercent =
+            series.prevClose != null && series.prevClose > 0 ? (change / series.prevClose) * 100 : 0;
+
+          // High/Low from series points (approx 30-day range)
+          const prices = series.points.map((p) => p.price).filter((p) => Number.isFinite(p) && p > 0);
+          const high24h = prices.length ? Math.max(...prices) : price;
+          const low24h = prices.length ? Math.min(...prices) : price;
+
+          return {
+            id: meta.id,
+            name: meta.name,
+            symbol: meta.symbol,
+            price,
+            change: Math.round(change * 100) / 100,
+            changePercent: Math.round(changePercent * 100) / 100,
+            high24h: Math.round(high24h * 100) / 100,
+            low24h: Math.round(low24h * 100) / 100,
+            color: meta.color,
+          } satisfies MetalData;
+        }),
+      );
+
+      const sanitized = results.map(sanitizeChangeValues);
+      if (validateMetalsData(sanitized)) {
+        console.log("✅ Twelve Data: Valid metals data received");
+        return sanitized;
+      }
+      console.warn("❌ Twelve Data: Invalid metals data, falling back to other providers");
+    } catch (error) {
+      const msg = String(error instanceof Error ? error.message : error);
+      if (msg.includes("available starting with") || msg.includes("pricing") || msg.includes("Grow")) {
+        twelveDataMetalsDisabledUntil = Date.now() + 60 * 60 * 1000;
+      }
+      console.warn("❌ Twelve Data: Request failed, falling back to other providers:", error);
+    }
+  }
+
   // Prefer GoldAPI if available
-  if (goldApiKey) {
+  if (goldApiKey && Date.now() >= goldApiDisabledUntil) {
     try {
       const goldData = await fetchMetalsDataFromGoldAPI(goldApiKey);
       // Sanitize change values before validation
@@ -104,6 +378,10 @@ export async function fetchMetalsData(): Promise<MetalData[]> {
       }
       console.warn("❌ GoldAPI: Invalid data (prices out of range or missing), falling back to MetalpriceAPI");
     } catch (error) {
+      const msg = String(error instanceof Error ? error.message : error);
+      if (msg.includes("429") || msg.includes("403") || msg.toLowerCase().includes("quota")) {
+        goldApiDisabledUntil = Date.now() + 30 * 60 * 1000;
+      }
       console.warn("❌ GoldAPI: Request failed, falling back to MetalpriceAPI:", error);
       // Fall through to MetalpriceAPI
     }
@@ -111,7 +389,7 @@ export async function fetchMetalsData(): Promise<MetalData[]> {
 
   if (!metalpriceApiKey) {
     throw new Error(
-      "No API key configured. Please set VITE_GOLDAPI_API_KEY or VITE_METALPRICE_API_KEY.",
+      "No API key configured. Please set VITE_TWELVEDATA_API_KEY, VITE_GOLDAPI_API_KEY, or VITE_METALPRICE_API_KEY.",
     );
   }
 
@@ -257,176 +535,68 @@ async function fetchMetalsDataFromGoldAPI(apiKey: string): Promise<MetalData[]> 
 }
 
 async function fetchMetalsDataFromMetalpriceAPI(apiKey: string): Promise<MetalData[]> {
-  const currencies = metalSymbols.map((m) => m.symbol).join(",");
+  const results = await Promise.all(
+    metalSymbols.map(async (meta) => {
+      const series = await fetchDailyMetalSeriesFromMetalpriceAPI(apiKey, meta.symbol, 30);
 
-  // Fetch latest prices (FREE TIER - Daily updates)
-  const latestUrl = `${METALPRICE_BASE_URL}/latest?api_key=${encodeURIComponent(
-    apiKey,
-  )}&base=USD&currencies=${encodeURIComponent(currencies)}`;
+      const price = series.lastClose;
+      const change = series.prevClose != null ? price - series.prevClose : 0;
+      const changePercent =
+        series.prevClose != null && series.prevClose > 0 ? (change / series.prevClose) * 100 : 0;
 
-  const latestRes = await fetch(latestUrl);
-  if (!latestRes.ok) {
-    const errorText = await latestRes.text();
-    let errorMessage = `Failed to fetch latest metal prices: ${latestRes.statusText}`;
-    
-    try {
-      const errorJson = JSON.parse(errorText);
-      if (errorJson.error?.info) {
-        errorMessage += ` - ${errorJson.error.info}`;
-      } else {
-        errorMessage += ` - ${errorText}`;
-      }
-    } catch {
-      errorMessage += ` - ${errorText}`;
-    }
-    
-    throw new Error(errorMessage);
-  }
+      const prices = series.points.map((p) => p.price).filter((p) => Number.isFinite(p) && p > 0);
+      const high24h = prices.length ? Math.max(...prices) : price;
+      const low24h = prices.length ? Math.min(...prices) : price;
 
-  const latestJson: {
-    success?: boolean;
-    rates?: Record<string, number>;
-    error?: { code: number; info: string };
-  } = await latestRes.json();
+      return {
+        id: meta.id,
+        name: meta.name,
+        symbol: meta.symbol,
+        price,
+        change: Math.round(change * 100) / 100,
+        changePercent: Math.round(changePercent * 100) / 100,
+        high24h: Math.round(high24h * 100) / 100,
+        low24h: Math.round(low24h * 100) / 100,
+        color: meta.color,
+      } satisfies MetalData;
+    }),
+  );
 
-  if (!latestJson.success) {
-    const errorMsg =
-      latestJson.error?.info ?? "MetalpriceAPI returned an error. Check your API key and quota.";
-    throw new Error(errorMsg);
-  }
-
-  if (!latestJson.rates) {
-    throw new Error("Unexpected response from MetalpriceAPI: missing rates.");
-  }
-
-  // Fetch yesterday's prices for change calculation (FREE TIER)
-  // Using "yesterday" endpoint which is simpler and free-tier compatible
-  const yesterdayUrl = `${METALPRICE_BASE_URL}/yesterday?api_key=${encodeURIComponent(
-    apiKey,
-  )}&base=USD&currencies=${encodeURIComponent(currencies)}`;
-
-  let yesterdayRates: Record<string, number> = {};
-  
-  try {
-    const yesterdayRes = await fetch(yesterdayUrl);
-    if (yesterdayRes.ok) {
-      const yesterdayJson: {
-        success?: boolean;
-        rates?: Record<string, number>;
-        error?: { code: number; info: string };
-      } = await yesterdayRes.json();
-
-      if (yesterdayJson.success && yesterdayJson.rates) {
-        yesterdayRates = yesterdayJson.rates;
-      } else if (yesterdayJson.error) {
-        console.warn("Could not fetch yesterday's prices:", yesterdayJson.error.info);
-      }
-    }
-  } catch (error) {
-    console.warn("Failed to fetch yesterday's prices for change calculation:", error);
-  }
-
-  const metalData = await Promise.all(metalSymbols.map(async (meta) => {
-    // Use USDXAU format (USD per ounce) instead of XAU (ounces per USD)
-    // MetalpriceAPI returns rates for `base=USD` as metal-per-USD (e.g. XAU per USD).
-    // Convert to USD per ounce by inverting.
-    const latestRate = latestJson.rates?.[meta.symbol];
-    const price = typeof latestRate === "number" ? invertRateToUsdPerOunce(latestRate) : 0;
-
-    // Calculate change from yesterday's price (FREE TIER method)
-    let change = 0;
-    let changePct = 0;
-
-    if (Object.keys(yesterdayRates).length > 0) {
-      const yesterdayRate = yesterdayRates[meta.symbol];
-      const yesterdayPrice =
-        typeof yesterdayRate === "number" ? invertRateToUsdPerOunce(yesterdayRate) : 0;
-      if (yesterdayPrice > 0 && price > 0) {
-        change = price - yesterdayPrice;
-        changePct = (change / yesterdayPrice) * 100;
-        
-        // Only log if change is significant (helps debug)
-        if (Math.abs(changePct) > 0.01) {
-          console.log(
-            `📊 MetalpriceAPI ${meta.symbol}: Today=$${price.toFixed(2)}, Yesterday=$${yesterdayPrice.toFixed(2)}, Change=$${change.toFixed(2)} (${changePct > 0 ? "+" : ""}${changePct.toFixed(2)}%)`
-          );
-        } else {
-          console.log(
-            `📊 MetalpriceAPI ${meta.symbol}: Price=$${price.toFixed(2)}, Change=~0% (market flat or data not updated)`
-          );
-        }
-      } else {
-        console.warn(`⚠️ MetalpriceAPI ${meta.symbol}: Cannot calculate change - yesterday price invalid (${yesterdayPrice})`);
-      }
-    } else {
-      // Try to get change from 2 days ago as fallback
-      try {
-        const twoDaysAgo = new Date();
-        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-        const twoDaysAgoStr = twoDaysAgo.toISOString().slice(0, 10);
-        
-        const twoDaysAgoUrl = `${METALPRICE_BASE_URL}/${twoDaysAgoStr}?api_key=${encodeURIComponent(
-          apiKey,
-        )}&base=USD&currencies=${encodeURIComponent(currencies)}`;
-        
-        const twoDaysAgoRes = await fetch(twoDaysAgoUrl);
-        if (twoDaysAgoRes.ok) {
-          const twoDaysAgoJson: {
-            success?: boolean;
-            rates?: Record<string, number>;
-          } = await twoDaysAgoRes.json();
-          
-          if (twoDaysAgoJson.success && twoDaysAgoJson.rates) {
-            const twoDaysAgoRate = twoDaysAgoJson.rates[meta.symbol];
-            const twoDaysAgoPrice =
-              typeof twoDaysAgoRate === "number" ? invertRateToUsdPerOunce(twoDaysAgoRate) : 0;
-            if (twoDaysAgoPrice > 0 && price > 0) {
-              change = price - twoDaysAgoPrice;
-              changePct = (change / twoDaysAgoPrice) * 100;
-              console.log(
-                `📊 MetalpriceAPI ${meta.symbol}: Using 2-day comparison - Today=$${price.toFixed(2)}, 2 days ago=$${twoDaysAgoPrice.toFixed(2)}, Change=$${change.toFixed(2)} (${changePct > 0 ? "+" : ""}${changePct.toFixed(2)}%)`
-              );
-            }
-          }
-        }
-      } catch (error) {
-        // Silently fail - we'll just show 0 change
-      }
-      
-      if (change === 0) {
-        console.warn(`⚠️ MetalpriceAPI ${meta.symbol}: No historical data available for change calculation - showing 0%`);
-      }
-    }
-
-    // For free tier, high/low are not available, use current price
-    const high24h = price;
-    const low24h = price;
-
-    return {
-      id: meta.id,
-      name: meta.name,
-      symbol: meta.symbol,
-      price: Math.round(price * 100) / 100, // Round to 2 decimal places
-      change: Math.round(change * 100) / 100,
-      changePercent: Math.round(changePct * 100) / 100,
-      high24h: Math.round(high24h * 100) / 100,
-      low24h: Math.round(low24h * 100) / 100,
-      color: meta.color,
-    };
-  }));
-
-  return metalData;
+  return results;
 }
 
 export async function fetchHistoricalMetalData(
   symbol: string,
   days: number = 30,
 ): Promise<ChartDataPoint[]> {
+  const twelveDataApiKey = import.meta.env.VITE_TWELVEDATA_API_KEY;
   const metalpriceApiKey = import.meta.env.VITE_METALPRICE_API_KEY;
   const goldApiKey = import.meta.env.VITE_GOLDAPI_API_KEY;
 
-  if (!metalpriceApiKey && !goldApiKey) {
+  if (!twelveDataApiKey && !metalpriceApiKey && !goldApiKey) {
     throw new Error("No API key configured for historical data");
+  }
+
+  try {
+    const points = await fetchHistoricalMetalDataFromLocalScraper(symbol, days);
+    if (points.length > 0) {
+      console.log(`✅ Local scraper: Fetched ${points.length} historical data points for ${symbol}`);
+      return points;
+    }
+  } catch (error) {
+    console.warn(`Failed to fetch historical data from local scraper for ${symbol}:`, error);
+  }
+
+  if (twelveDataApiKey) {
+    try {
+      const series = await fetchDailyMetalSeriesFromTwelveData(twelveDataApiKey, symbol, days);
+      if (series.points.length > 0) {
+        console.log(`✅ Twelve Data: Fetched ${series.points.length} historical data points for ${symbol}`);
+        return series.points;
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch historical data from Twelve Data for ${symbol}:`, error);
+    }
   }
 
   // Try MetalpriceAPI timeframe endpoint (free tier supports up to 365 days)
