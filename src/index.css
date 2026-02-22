@@ -6,6 +6,59 @@
 
 @layer base {
   :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 43 96% 56%;
+    --primary-foreground: 220 20% 6%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 43 80% 45%;
+    --accent-foreground: 220 20% 6%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 43 96% 56%;
+
+    --radius: 0.75rem;
+
+    --chart-gold: 43 96% 56%;
+    --chart-silver: 220 10% 70%;
+    --chart-platinum: 200 15% 60%;
+    --chart-palladium: 25 60% 50%;
+
+    --gradient-gold: linear-gradient(135deg, hsl(43 96% 56%), hsl(35 90% 45%));
+    --gradient-card: linear-gradient(135deg, hsl(210 40% 99%), hsl(210 40% 96%));
+    --gradient-hero: linear-gradient(180deg, hsl(0 0% 100%), hsl(210 40% 97%));
+
+    --shadow-gold: 0 0 30px -5px hsl(43 96% 56% / 0.15);
+    --shadow-card: 0 4px 24px -4px hsl(0 0% 0% / 0.12);
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 43 96% 56%;
+    --sidebar-primary-foreground: 220 20% 6%;
+    --sidebar-accent: 210 40% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 43 96% 56%;
+  }
+
+  .dark {
     --background: 220 20% 6%;
     --foreground: 40 20% 92%;
 
