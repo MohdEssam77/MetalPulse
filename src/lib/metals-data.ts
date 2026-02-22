@@ -8,6 +8,7 @@ export interface MetalData {
   high24h: number;
   low24h: number;
   color: string;
+  effectiveDate?: string;
 }
 
 export interface EtfData {

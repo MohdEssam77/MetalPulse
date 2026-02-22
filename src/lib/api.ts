@@ -265,6 +265,7 @@ async function fetchMetalsDataFromLocalScraper(): Promise<MetalData[]> {
       const changePercent = typeof m.changePercent === "number" ? m.changePercent : 0;
       const high24h = typeof m.high24h === "number" ? m.high24h : price;
       const low24h = typeof m.low24h === "number" ? m.low24h : price;
+      const effectiveDate = typeof m.effectiveDate === "string" ? m.effectiveDate : undefined;
 
       return {
         id,
@@ -276,6 +277,7 @@ async function fetchMetalsDataFromLocalScraper(): Promise<MetalData[]> {
         high24h,
         low24h,
         color: colorById[id] ?? "gold",
+        effectiveDate,
       } satisfies MetalData;
     });
 

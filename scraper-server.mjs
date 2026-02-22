@@ -154,6 +154,7 @@ const server = http.createServer(async (req, res) => {
           changePercent: Math.round(changePercent * 100) / 100,
           high24h: Math.round(high * 100) / 100,
           low24h: Math.round(low * 100) / 100,
+          effectiveDate: last.date,
         };
       });
 

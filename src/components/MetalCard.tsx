@@ -18,6 +18,13 @@ const MetalCard = ({ metal, onClick, isSelected }: MetalCardProps) => {
   const isPositive = metal.change >= 0;
   const colorClass = colorMap[metal.color] || "";
 
+  const changeLabel = (() => {
+    if (!metal.effectiveDate) return "today";
+    const dt = new Date(metal.effectiveDate);
+    if (!Number.isFinite(dt.getTime())) return "today";
+    return dt.toLocaleDateString("en-US", { weekday: "short" });
+  })();
+
   return (
     <button
       onClick={onClick}
@@ -49,7 +56,7 @@ const MetalCard = ({ metal, onClick, isSelected }: MetalCardProps) => {
         ${metal.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
       </p>
       <p className={`mt-1 text-sm ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
-        {isPositive ? "+" : ""}${metal.change.toFixed(2)} today
+        {isPositive ? "+" : ""}${metal.change.toFixed(2)} {changeLabel}
       </p>
 
       <div className="mt-3 flex justify-between text-xs text-muted-foreground">
