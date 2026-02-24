@@ -7,6 +7,17 @@ interface MetalCardProps {
   isSelected?: boolean;
 }
 
+function weekdayFromEffectiveDate(effectiveDate?: string) {
+  if (!effectiveDate) return "today";
+
+  // `effectiveDate` coming from the scraper is a market date (typically `YYYY-MM-DD`).
+  // Parse it as a UTC date to avoid local-time midnight shifting the weekday.
+  const m = /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) ? effectiveDate : null;
+  const dt = m ? new Date(`${effectiveDate}T00:00:00Z`) : new Date(effectiveDate);
+  if (!Number.isFinite(dt.getTime())) return "today";
+  return dt.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+}
+
 const colorMap: Record<string, string> = {
   gold: "text-gold border-gold/30 shadow-[0_0_20px_hsl(43_96%_56%/0.1)]",
   silver: "text-silver border-silver/30 shadow-[0_0_20px_hsl(220_10%_70%/0.1)]",
@@ -15,15 +26,12 @@ const colorMap: Record<string, string> = {
 };
 
 const MetalCard = ({ metal, onClick, isSelected }: MetalCardProps) => {
-  const isPositive = metal.change >= 0;
+  const isPositive = Number.isFinite(metal.changePercent)
+    ? metal.changePercent >= 0
+    : metal.change >= 0;
   const colorClass = colorMap[metal.color] || "";
 
-  const changeLabel = (() => {
-    if (!metal.effectiveDate) return "today";
-    const dt = new Date(metal.effectiveDate);
-    if (!Number.isFinite(dt.getTime())) return "today";
-    return dt.toLocaleDateString("en-US", { weekday: "short" });
-  })();
+  const changeLabel = weekdayFromEffectiveDate(metal.effectiveDate);
 
   return (
     <button
