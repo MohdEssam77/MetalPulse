@@ -1,10 +1,16 @@
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { ETFS_DATA } from "@/lib/metals-data";
 import { useEtfs } from "@/hooks/use-etfs";
+import { useCurrency } from "@/components/currency-provider";
+import { useUsdToEurRate } from "@/hooks/use-currency-rate";
+import { convertUsdToCurrency, formatMoney } from "@/lib/currency";
 
 const ETFTable = () => {
   const { data, isLoading, isError } = useEtfs();
   const etfs = data && data.length > 0 ? data : ETFS_DATA;
+  const { currency } = useCurrency();
+  const { data: fx } = useUsdToEurRate();
+  const rate = fx?.rate ?? null;
 
   return (
     <div className="rounded-xl border border-border bg-gradient-card p-6">
@@ -24,6 +30,7 @@ const ETFTable = () => {
           <tbody>
             {etfs.map((etf) => {
               const isPositive = etf.change >= 0;
+              const displayPrice = convertUsdToCurrency(etf.price, currency, rate);
               return (
                 <tr
                   key={etf.symbol}
@@ -34,7 +41,7 @@ const ETFTable = () => {
                   </td>
                   <td className="py-3 pr-4 text-sm text-foreground">{etf.name}</td>
                   <td className="py-3 pr-4 text-right font-medium text-foreground">
-                    ${etf.price.toFixed(2)}
+                    {formatMoney(displayPrice, currency)}
                   </td>
                   <td className="py-3 text-right">
                     <span

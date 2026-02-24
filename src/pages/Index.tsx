@@ -95,9 +95,7 @@ const Index = () => {
       <section id="prices" className="py-12">
         <div className="container mx-auto px-4">
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="font-display text-2xl font-bold text-foreground">
-              Spot Prices
-            </h2>
+            <h2 className="font-display text-2xl font-bold text-foreground">Spot Prices</h2>
             {lastUpdateTime && (
               <div className="text-xs text-muted-foreground">
                 {isRefetching && <span className="text-yellow-400">🔄 Refreshing...</span>}

@@ -1,5 +1,8 @@
 import { TrendingUp, TrendingDown } from "lucide-react";
 import type { MetalData } from "@/lib/metals-data";
+import { useCurrency } from "@/components/currency-provider";
+import { useUsdToEurRate } from "@/hooks/use-currency-rate";
+import { convertUsdToCurrency, formatMoney } from "@/lib/currency";
 
 interface MetalCardProps {
   metal: MetalData;
@@ -26,12 +29,22 @@ const colorMap: Record<string, string> = {
 };
 
 const MetalCard = ({ metal, onClick, isSelected }: MetalCardProps) => {
+  const { currency } = useCurrency();
+  const { data: fx } = useUsdToEurRate();
+
+  const rate = fx?.rate ?? null;
+
   const isPositive = Number.isFinite(metal.changePercent)
     ? metal.changePercent >= 0
     : metal.change >= 0;
   const colorClass = colorMap[metal.color] || "";
 
   const changeLabel = weekdayFromEffectiveDate(metal.effectiveDate);
+
+  const displayPrice = convertUsdToCurrency(metal.price, currency, rate);
+  const displayChange = convertUsdToCurrency(metal.change, currency, rate);
+  const displayLow = convertUsdToCurrency(metal.low24h, currency, rate);
+  const displayHigh = convertUsdToCurrency(metal.high24h, currency, rate);
 
   return (
     <button
@@ -61,15 +74,15 @@ const MetalCard = ({ metal, onClick, isSelected }: MetalCardProps) => {
       </div>
 
       <p className="font-display text-2xl font-bold text-foreground">
-        ${metal.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+        {formatMoney(displayPrice, currency)}
       </p>
       <p className={`mt-1 text-sm ${isPositive ? "text-emerald-400" : "text-red-400"}`}>
-        {isPositive ? "+" : ""}${metal.change.toFixed(2)} {changeLabel}
+        {isPositive ? "+" : ""}{formatMoney(displayChange, currency)} {changeLabel}
       </p>
 
       <div className="mt-3 flex justify-between text-xs text-muted-foreground">
-        <span>L: ${metal.low24h.toLocaleString()}</span>
-        <span>H: ${metal.high24h.toLocaleString()}</span>
+        <span>L: {formatMoney(displayLow, currency)}</span>
+        <span>H: {formatMoney(displayHigh, currency)}</span>
       </div>
     </button>
   );

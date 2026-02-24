@@ -12,6 +12,9 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchHistoricalMetalData } from "@/lib/api";
 import { generateChartData } from "@/lib/metals-data";
 import type { MetalData } from "@/lib/metals-data";
+import { useCurrency } from "@/components/currency-provider";
+import { useUsdToEurRate } from "@/hooks/use-currency-rate";
+import { convertUsdToCurrency, formatMoney } from "@/lib/currency";
 
 interface PriceChartProps {
   metal: MetalData;
@@ -25,6 +28,10 @@ const chartColors: Record<string, { stroke: string; fill: string }> = {
 };
 
 const PriceChart = ({ metal }: PriceChartProps) => {
+  const { currency } = useCurrency();
+  const { data: fx } = useUsdToEurRate();
+  const rate = fx?.rate ?? null;
+
   // Fetch real historical data
   const { data: historicalData, isLoading } = useQuery({
     queryKey: ["historical", metal.symbol],
@@ -42,6 +49,14 @@ const PriceChart = ({ metal }: PriceChartProps) => {
     return generateChartData(metal.price, 30);
   }, [historicalData, metal.price]);
 
+  const displayData = useMemo(() => {
+    if (currency === "USD") return data;
+    return data.map((p) => ({
+      ...p,
+      price: Math.round(convertUsdToCurrency(p.price, currency, rate) * 100) / 100,
+    }));
+  }, [currency, data, rate]);
+
   const colors = chartColors[metal.color] || chartColors.gold;
 
   return (
@@ -50,7 +65,7 @@ const PriceChart = ({ metal }: PriceChartProps) => {
         <h3 className="font-display text-lg font-semibold text-foreground">
           {metal.name} ({metal.symbol}) — 30 Day
         </h3>
-        <span className="text-sm text-muted-foreground">USD</span>
+        <span className="text-sm text-muted-foreground">{currency}</span>
       </div>
       <div className="h-[300px] w-full">
         {isLoading && (
@@ -60,7 +75,7 @@ const PriceChart = ({ metal }: PriceChartProps) => {
         )}
         {!isLoading && (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <AreaChart data={displayData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
             <defs>
               <linearGradient id={`gradient-${metal.id}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={colors.fill} stopOpacity={0.3} />
@@ -79,7 +94,7 @@ const PriceChart = ({ metal }: PriceChartProps) => {
               axisLine={false}
               tickLine={false}
               domain={["auto", "auto"]}
-              tickFormatter={(v) => `$${v.toLocaleString()}`}
+              tickFormatter={(v) => formatMoney(v, currency)}
             />
             <Tooltip
               contentStyle={{
@@ -88,7 +103,7 @@ const PriceChart = ({ metal }: PriceChartProps) => {
                 borderRadius: "8px",
                 color: "hsl(40, 20%, 92%)",
               }}
-              formatter={(value: number) => [`$${value.toLocaleString()}`, "Price"]}
+              formatter={(value: number) => [formatMoney(value, currency), "Price"]}
             />
             <Area
               type="monotone"
