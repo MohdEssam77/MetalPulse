@@ -22,9 +22,11 @@ const AlertForm = () => {
 
   const allAssets = useMemo(
     () => [
-      ...metals.map((m) => ({ id: m.id, label: `${m.name} (${m.symbol})`, price: m.price })),
+      ...metals.map((m) => ({ id: m.id, type: "metal" as const, symbol: m.symbol, label: `${m.name} (${m.symbol})`, price: m.price })),
       ...etfs.map((e) => ({
         id: e.symbol.toLowerCase(),
+        type: "etf" as const,
+        symbol: e.symbol,
         label: `${e.name} (${e.symbol})`,
         price: e.price,
       })),
@@ -36,13 +38,46 @@ const AlertForm = () => {
 
   const currentAsset = allAssets.find((a) => a.id === selectedAsset) ?? allAssets[0];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !targetPrice) {
       toast.error("Please fill all fields");
       return;
     }
-    toast.success(`Alert set! We'll notify you at ${email} when ${currentAsset.label} goes ${direction} $${targetPrice}`);
+
+    if (!currentAsset) {
+      toast.error("Please select an asset");
+      return;
+    }
+
+    if (currentAsset.type === "etf") {
+      toast.error("ETF alerts are not enabled yet");
+      return;
+    }
+
+    const res = await fetch("/api/alerts", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        assetType: "metal",
+        assetSymbol: currentAsset.symbol,
+        direction,
+        targetPrice: Number(targetPrice),
+      }),
+    });
+
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      toast.error(`Failed to set alert: ${t || res.statusText}`);
+      return;
+    }
+
+    toast.success(
+      `Alert set! We'll notify you at ${email} when ${currentAsset.label} goes ${direction} $${targetPrice}`,
+    );
     setEmail("");
     setTargetPrice("");
   };
@@ -74,14 +109,14 @@ const AlertForm = () => {
             className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary"
           >
             <optgroup label="Precious Metals">
-              {METALS_DATA.map((m) => (
+              {metals.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name} ({m.symbol}) — ${m.price.toLocaleString()}
                 </option>
               ))}
             </optgroup>
             <optgroup label="ETFs">
-              {ETFS_DATA.map((e) => (
+              {etfs.map((e) => (
                 <option key={e.symbol} value={e.symbol.toLowerCase()}>
                   {e.name} ({e.symbol}) — ${e.price.toFixed(2)}
                 </option>

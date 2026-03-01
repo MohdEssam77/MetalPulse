@@ -9,7 +9,7 @@
     "dev:api": "node --enable-source-maps --import tsx server/api-server.ts",
     "dev:worker": "node --enable-source-maps --import tsx server/alerts-worker.ts",
     "dev:all": "concurrently -k -n scraper,vite -c cyan,magenta \"npm run dev:scraper\" \"npm run dev\"",
-    "dev:all:alerts": "concurrently -k -n api,worker,scraper,vite -c yellow,green,cyan,magenta \"npm run dev:api\" \"npm run dev:worker\" \"npm run dev:scraper\" \"npm run dev\"",
+    "dev:alerts:stack": "concurrently -k -n api,worker,scraper,vite -c yellow,green,cyan,magenta \"npm run dev:api\" \"npm run dev:worker\" \"npm run dev:scraper\" \"npm run dev\"",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",

@@ -38,7 +38,14 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
 }
 
 const PORT = Number.parseInt(process.env.API_PORT || process.env.PORT || "8788", 10);
-const supabase: any = createSupabaseAdmin();
+let supabase: any = null;
+let supabaseInitError: string | null = null;
+try {
+  supabase = createSupabaseAdmin();
+} catch (e) {
+  supabaseInitError = e instanceof Error ? e.message : String(e);
+  console.warn(`Alerts API running without Supabase configured: ${supabaseInitError}`);
+}
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -46,6 +53,13 @@ const server = http.createServer(async (req, res) => {
 
     if (requestUrl.pathname === "/health") {
       return sendJson(res, 200, { ok: true });
+    }
+
+    if (requestUrl.pathname.startsWith("/api/alerts") && !supabase) {
+      return sendJson(res, 503, {
+        error: "Alerts backend is not configured",
+        details: supabaseInitError ?? "Missing Supabase env vars",
+      });
     }
 
     if (requestUrl.pathname === "/api/alerts" && req.method === "POST") {

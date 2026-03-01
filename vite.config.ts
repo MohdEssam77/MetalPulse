@@ -11,6 +11,10 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
     proxy: {
+      "/api/metals": {
+        target: "http://127.0.0.1:8787",
+        changeOrigin: true,
+      },
       "/api": {
         target: "http://127.0.0.1:8788",
         changeOrigin: true,
