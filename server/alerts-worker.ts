@@ -53,7 +53,7 @@ async function tick(env: EnvLike = process.env) {
       "id, email, asset_type, asset_symbol, direction, target_price, is_active, last_is_condition_met, created_at, updated_at",
     )
     .eq("is_active", true)
-    .eq("asset_type", "metal");
+    .in("asset_type", ["metal", "etf"]);
 
   if (error) {
     throw new Error(error.message);
@@ -65,8 +65,14 @@ async function tick(env: EnvLike = process.env) {
     const symbol = alert.asset_symbol?.toUpperCase();
     if (!symbol) continue;
 
+    if (alert.asset_type !== "metal") {
+      console.log(`Skipping unsupported alert asset_type=${alert.asset_type} symbol=${symbol} id=${alert.id}`);
+      continue;
+    }
+
     const currentPrice = prices[symbol];
     if (!Number.isFinite(currentPrice)) {
+      console.log(`Missing price for symbol=${symbol} id=${alert.id}`);
       continue;
     }
 
@@ -77,9 +83,9 @@ async function tick(env: EnvLike = process.env) {
     });
 
     const prev = alert.last_is_condition_met;
-    const crossedToTrue = prev === false && isMet === true;
+    const shouldTrigger = (prev == null && isMet === true) || (prev === false && isMet === true);
 
-    if (crossedToTrue) {
+    if (shouldTrigger) {
       const subject = `MetalPulse alert: ${symbol} is ${alert.direction} $${Number(alert.target_price)}`;
       const html = buildEmailHtml({
         email: alert.email,
