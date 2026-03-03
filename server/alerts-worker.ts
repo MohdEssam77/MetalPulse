@@ -1,7 +1,11 @@
+import dotenv from "dotenv";
+import path from "node:path";
 import { createSupabaseAdmin } from "./supabase";
 import { fetchLatestMetalPricesUsd } from "./prices";
 import { isAlertConditionMet, type PriceAlertRow } from "./alerts";
 import { sendPriceAlertEmail } from "./email";
+
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 type PriceAlertDbRow = PriceAlertRow;
 
@@ -85,6 +89,10 @@ async function tick(env: EnvLike = process.env) {
     const prev = alert.last_is_condition_met;
     const shouldTrigger = (prev == null && isMet === true) || (prev === false && isMet === true);
 
+    console.log(
+      `Alert eval id=${alert.id} email=${alert.email} symbol=${symbol} dir=${alert.direction} target=${Number(alert.target_price)} current=${currentPrice} prev=${prev} isMet=${isMet} shouldTrigger=${shouldTrigger}`,
+    );
+
     if (shouldTrigger) {
       const subject = `MetalPulse alert: ${symbol} is ${alert.direction} $${Number(alert.target_price)}`;
       const html = buildEmailHtml({
@@ -95,12 +103,17 @@ async function tick(env: EnvLike = process.env) {
         currentPrice,
       });
 
-      await sendPriceAlertEmail({
-        to: alert.email,
-        subject,
-        html,
-        env: env as any,
-      });
+      try {
+        await sendPriceAlertEmail({
+          to: alert.email,
+          subject,
+          html,
+          env: env as any,
+        });
+        console.log(`Alert email sent id=${alert.id} to=${alert.email}`);
+      } catch (e) {
+        console.error(`Alert email failed id=${alert.id} to=${alert.email}:`, e);
+      }
     }
 
     if (prev == null || prev !== isMet) {

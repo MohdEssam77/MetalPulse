@@ -1,7 +1,11 @@
+import dotenv from "dotenv";
+import path from "node:path";
 import http from "node:http";
 import { URL } from "node:url";
 import { createSupabaseAdmin } from "./supabase";
 import { createAlertSchema } from "./alerts";
+
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 type Json = Record<string, unknown> | unknown[];
 

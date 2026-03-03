@@ -5,6 +5,50 @@ const METALS_SYMBOL_MAP: Record<string, string> = {
   XPD: "xpdusd",
 };
 
+async function fetchTwelveDataMetalPricesUsd(apiKey: string): Promise<Record<string, number>> {
+  const symbols = Object.keys(METALS_SYMBOL_MAP);
+  const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(
+    symbols.join(","),
+  )}&apikey=${encodeURIComponent(apiKey)}`;
+
+  const res = await fetch(url, {
+    headers: {
+      "user-agent": "MetalPulse/1.0",
+    },
+  });
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Twelve Data fetch failed: ${res.status} ${res.statusText} - ${t}`);
+  }
+
+  const json: any = await res.json();
+
+  if (json?.status === "error") {
+    const msg = json?.message ? String(json.message) : "Unknown Twelve Data error";
+    throw new Error(`Twelve Data error: ${msg}`);
+  }
+
+  const out: Record<string, number> = {};
+
+  if (json && typeof json === "object" && !Array.isArray(json)) {
+    for (const [symbol, payload] of Object.entries(json)) {
+      if (!payload || typeof payload !== "object") continue;
+      const priceRaw = (payload as any).price;
+      const price = Number.parseFloat(String(priceRaw ?? ""));
+      if (!Number.isFinite(price) || price <= 0) continue;
+      out[String(symbol).toUpperCase()] = Math.round(price * 100) / 100;
+    }
+  }
+
+  const missing = symbols.filter((s) => !Number.isFinite(out[s]));
+  if (missing.length > 0) {
+    throw new Error(`Twelve Data returned missing/invalid prices for: ${missing.join(",")}`);
+  }
+
+  return out;
+}
+
 function parseStooqCsv(text: string): Array<{ date: string; close: number }> {
   const trimmed = text.trim();
   if (!trimmed) return [];
@@ -40,6 +84,16 @@ function parseStooqCsv(text: string): Array<{ date: string; close: number }> {
 }
 
 export async function fetchLatestMetalPricesUsd(): Promise<Record<string, number>> {
+  const twelveDataApiKey =
+    process.env.TWELVEDATA_API_KEY || process.env.VITE_TWELVEDATA_API_KEY || process.env.TWELVE_DATA_API_KEY;
+  if (twelveDataApiKey) {
+    try {
+      return await fetchTwelveDataMetalPricesUsd(twelveDataApiKey);
+    } catch {
+      // fall through to Stooq
+    }
+  }
+
   const days = 2;
 
   const entries = await Promise.all(
