@@ -1,0 +1,15 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm run build"
+
+[[deploy]]
+startCommand = "npm run start"
+name = "web"
+
+[[deploy]]
+startCommand = "npm run dev:api"
+name = "api"
+
+[[deploy]]
+startCommand = "npm run dev:worker"
+name = "worker"
