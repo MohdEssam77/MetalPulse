@@ -3,7 +3,7 @@ import path from "node:path";
 import { createSupabaseAdmin } from "./supabase";
 import { fetchLatestMetalPricesUsd } from "./prices";
 import { isAlertConditionMet, type PriceAlertRow } from "./alerts";
-import { sendPriceAlertEmail } from "./email";
+import { sendPriceAlertEmail } from "./emailService";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
@@ -104,12 +104,7 @@ async function tick(env: EnvLike = process.env) {
       });
 
       try {
-        await sendPriceAlertEmail({
-          to: alert.email,
-          subject,
-          html,
-          env: env as any,
-        });
+        await sendPriceAlertEmail(alert.email, symbol, Number(alert.target_price), currentPrice);
         console.log(`Alert email sent id=${alert.id} to=${alert.email}`);
       } catch (e) {
         console.error(`Alert email failed id=${alert.id} to=${alert.email}:`, e);
