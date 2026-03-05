@@ -316,17 +316,19 @@ const server = http.createServer(async (req, res) => {
           .replace(/^([\\/])+/g, "")
           .replace(/\0/g, "");
 
-        const abs = path.resolve(DIST_DIR, safePath);
-        const isWithinDist = abs === DIST_DIR || abs.startsWith(DIST_DIR + path.sep);
+        if (safePath) {
+          const abs = path.resolve(DIST_DIR, safePath);
+          const isWithinDist = abs === DIST_DIR || abs.startsWith(DIST_DIR + path.sep);
 
-        if (isWithinDist && safePath && fs.existsSync(abs) && fs.statSync(abs).isFile()) {
-          const buf = fs.readFileSync(abs);
-          res.writeHead(200, {
-            "content-type": getContentType(abs),
-            "cache-control": "public, max-age=31536000, immutable",
-            "content-length": buf.length,
-          });
-          return res.end(buf);
+          if (isWithinDist && fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+            const buf = fs.readFileSync(abs);
+            res.writeHead(200, {
+              "content-type": getContentType(abs),
+              "cache-control": "public, max-age=31536000, immutable",
+              "content-length": buf.length,
+            });
+            return res.end(buf);
+          }
         }
 
         const html = fs.readFileSync(INDEX_HTML_PATH, "utf8");
