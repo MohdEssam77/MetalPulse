@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import path from "node:path";
+import fs from "node:fs";
 import http from "node:http";
 import { URL } from "node:url";
 import { createSupabaseAdmin } from "./supabase";
@@ -29,6 +30,30 @@ function sendJson(res: http.ServerResponse, statusCode: number, payload: Json) {
     "content-length": Buffer.byteLength(body),
   });
   res.end(body);
+}
+
+function sendText(res: http.ServerResponse, statusCode: number, body: string, contentType: string) {
+  res.writeHead(statusCode, {
+    "content-type": contentType,
+    "cache-control": "no-store",
+    "content-length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function getContentType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".html") return "text/html; charset=utf-8";
+  if (ext === ".js") return "application/javascript; charset=utf-8";
+  if (ext === ".css") return "text/css; charset=utf-8";
+  if (ext === ".json") return "application/json; charset=utf-8";
+  if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".ico") return "image/x-icon";
+  if (ext === ".txt") return "text/plain; charset=utf-8";
+  return "application/octet-stream";
 }
 
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
@@ -127,6 +152,8 @@ function toChartPoints(rows: Array<{ date: string; close: number }>): Array<{ da
 }
 
 const PORT = Number.parseInt(process.env.API_PORT || process.env.PORT || "8788", 10);
+const DIST_DIR = path.resolve(process.cwd(), "dist");
+const INDEX_HTML_PATH = path.join(DIST_DIR, "index.html");
 let supabase: any = null;
 let supabaseInitError: string | null = null;
 try {
@@ -139,12 +166,13 @@ try {
 const server = http.createServer(async (req, res) => {
   try {
     const requestUrl = new URL(req.url || "/", `http://${req.headers.host}`);
+    const method = req.method || "GET";
 
     if (requestUrl.pathname === "/health") {
       return sendJson(res, 200, { ok: true });
     }
 
-    if (requestUrl.pathname === "/api/metals" && req.method === "GET") {
+    if (requestUrl.pathname === "/api/metals" && method === "GET") {
       const days = 30;
       const promises = Object.entries(METALS_STOOQ_SYMBOL_MAP).map(async ([symbol, stooqSymbol]) => {
         const rows = await getStooqSeries(stooqSymbol, days + 2);
@@ -195,7 +223,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const metalsHistory = requestUrl.pathname.match(/^\/api\/metals\/(XAU|XAG|XPT|XPD)\/history$/i);
-    if (metalsHistory && req.method === "GET") {
+    if (metalsHistory && method === "GET") {
       const symbol = metalsHistory[1]!.toUpperCase();
       const stooqSymbol = METALS_STOOQ_SYMBOL_MAP[symbol];
       if (!stooqSymbol) return sendJson(res, 404, { error: "Unknown metal symbol" });
@@ -215,7 +243,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (requestUrl.pathname === "/api/alerts" && req.method === "POST") {
+    if (requestUrl.pathname === "/api/alerts" && method === "POST") {
       const body = await readJsonBody(req);
       const parsed = createAlertSchema.safeParse(body);
       if (!parsed.success) {
@@ -245,7 +273,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 201, { alert: data });
     }
 
-    if (requestUrl.pathname === "/api/alerts" && req.method === "GET") {
+    if (requestUrl.pathname === "/api/alerts" && method === "GET") {
       const email = requestUrl.searchParams.get("email");
       if (!email) {
         return sendJson(res, 400, { error: "Missing email query param" });
@@ -265,7 +293,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     const del = requestUrl.pathname.match(/^\/api\/alerts\/([0-9a-f-]{36})$/i);
-    if (del && req.method === "DELETE") {
+    if (del && method === "DELETE") {
       const id = del[1]!;
 
       const { error } = await supabase
@@ -278,6 +306,32 @@ const server = http.createServer(async (req, res) => {
       }
 
       return sendJson(res, 200, { ok: true });
+    }
+
+    if (method === "GET" && !requestUrl.pathname.startsWith("/api/")) {
+      if (fs.existsSync(DIST_DIR) && fs.existsSync(INDEX_HTML_PATH)) {
+        const requestedPath = decodeURIComponent(requestUrl.pathname);
+        const safePath = path
+          .normalize(requestedPath)
+          .replace(/^([\\/])+/g, "")
+          .replace(/\0/g, "");
+
+        const abs = path.resolve(DIST_DIR, safePath);
+        const isWithinDist = abs === DIST_DIR || abs.startsWith(DIST_DIR + path.sep);
+
+        if (isWithinDist && safePath && fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+          const buf = fs.readFileSync(abs);
+          res.writeHead(200, {
+            "content-type": getContentType(abs),
+            "cache-control": "public, max-age=31536000, immutable",
+            "content-length": buf.length,
+          });
+          return res.end(buf);
+        }
+
+        const html = fs.readFileSync(INDEX_HTML_PATH, "utf8");
+        return sendText(res, 200, html, "text/html; charset=utf-8");
+      }
     }
 
     return sendJson(res, 404, { error: "Not found" });
