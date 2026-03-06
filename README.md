@@ -134,7 +134,3 @@ Outputs to `dist/`. The API server serves the static frontend with SPA fallback.
 1. Fork
 2. Create a feature branch
 3. Open a PR
-
-## License
-
-MIT
