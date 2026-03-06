@@ -16,7 +16,6 @@ function createTransporter() {
   const family = process.env.GMAIL_SMTP_FAMILY ? Number.parseInt(process.env.GMAIL_SMTP_FAMILY, 10) : 4;
 
   const transporter = nodemailer.createTransport({
-    service: "gmail",
     host: "smtp.gmail.com",
     port,
     secure,
@@ -30,7 +29,8 @@ function createTransporter() {
     connectionTimeout: 20_000,
     greetingTimeout: 20_000,
     socketTimeout: 30_000,
-    ...(Number.isFinite(family) ? { family } : {}),
+    family: 4,
+    socketOptions: { family: 4 },
   });
 
   console.log(`Gmail SMTP configured host=smtp.gmail.com port=${port} secure=${String(secure)} family=${String(family)}`);
