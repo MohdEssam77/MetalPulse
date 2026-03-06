@@ -571,90 +571,23 @@ export async function fetchHistoricalMetalData(
   symbol: string,
   days: number = 30,
 ): Promise<ChartDataPoint[]> {
-  const twelveDataApiKey = import.meta.env.VITE_TWELVEDATA_API_KEY;
-  const metalpriceApiKey = import.meta.env.VITE_METALPRICE_API_KEY;
-  const goldApiKey = import.meta.env.VITE_GOLDAPI_API_KEY;
-
-  if (!twelveDataApiKey && !metalpriceApiKey && !goldApiKey) {
-    throw new Error("No API key configured for historical data");
-  }
-
   try {
-    const points = await fetchHistoricalMetalDataFromLocalScraper(symbol, days);
-    if (points.length > 0) {
-      console.log(`✅ Local scraper: Fetched ${points.length} historical data points for ${symbol}`);
-      return points;
+    const res = await fetch(`/api/metals/${symbol}/history?days=${days}`);
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Failed to fetch historical data: ${res.status} ${res.statusText} - ${t}`);
     }
+    const points: ChartDataPoint[] = await res.json();
+    if (!Array.isArray(points)) {
+      throw new Error("Unexpected historical data payload");
+    }
+    console.log(`✅ Backend: Fetched ${points.length} historical data points for ${symbol}`);
+    return points;
   } catch (error) {
-    console.warn(`Failed to fetch historical data from local scraper for ${symbol}:`, error);
+    console.warn(`Failed to fetch historical data from backend for ${symbol}:`, error);
+    // Fallback: return empty array (component will handle gracefully)
+    return [];
   }
-
-  if (twelveDataApiKey) {
-    try {
-      const series = await fetchDailyMetalSeriesFromTwelveData(twelveDataApiKey, symbol, days);
-      if (series.points.length > 0) {
-        console.log(`✅ Twelve Data: Fetched ${series.points.length} historical data points for ${symbol}`);
-        return series.points;
-      }
-    } catch (error) {
-      console.warn(`Failed to fetch historical data from Twelve Data for ${symbol}:`, error);
-    }
-  }
-
-  // Try MetalpriceAPI timeframe endpoint (free tier supports up to 365 days)
-  if (metalpriceApiKey) {
-    try {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-
-      const startDateStr = startDate.toISOString().slice(0, 10);
-      const endDateStr = endDate.toISOString().slice(0, 10);
-
-      const url = `${METALPRICE_BASE_URL}/timeframe?api_key=${encodeURIComponent(
-        metalpriceApiKey,
-      )}&start_date=${startDateStr}&end_date=${endDateStr}&base=USD&currencies=${symbol}`;
-
-      const res = await fetch(url);
-      if (res.ok) {
-        const json: {
-          success?: boolean;
-          rates?: Record<string, Record<string, number>>;
-        } = await res.json();
-
-        if (json.success && json.rates) {
-          const dataPoints: ChartDataPoint[] = [];
-
-          // Sort dates and extract prices
-          Object.keys(json.rates)
-            .sort()
-            .forEach((dateStr) => {
-              const dayRates = json.rates![dateStr];
-              const rate = dayRates[symbol];
-              const price = typeof rate === "number" ? invertRateToUsdPerOunce(rate) : 0;
-              if (price > 0) {
-                const date = new Date(dateStr);
-                dataPoints.push({
-                  date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-                  price: Math.round(price * 100) / 100,
-                });
-              }
-            });
-
-          if (dataPoints.length > 0) {
-            console.log(`✅ Fetched ${dataPoints.length} historical data points for ${symbol}`);
-            return dataPoints;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn(`Failed to fetch historical data from MetalpriceAPI for ${symbol}:`, error);
-    }
-  }
-
-  // Fallback: Return empty array (component will handle gracefully)
-  console.warn(`⚠️ No historical data available for ${symbol}`);
-  return [];
 }
 
 export async function fetchEtfQuotes(): Promise<EtfQuote[]> {

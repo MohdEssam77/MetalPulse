@@ -49,6 +49,9 @@ const PriceChart = ({ metal }: PriceChartProps) => {
     return generateChartData(metal.price, 30);
   }, [historicalData, metal.price]);
 
+  // Show a clear message when using fallback data
+  const isUsingFallback = !(historicalData && historicalData.length > 0);
+
   const displayData = useMemo(() => {
     if (currency === "USD") return data;
     return data.map((p) => ({
@@ -65,7 +68,12 @@ const PriceChart = ({ metal }: PriceChartProps) => {
         <h3 className="font-display text-lg font-semibold text-foreground">
           {metal.name} ({metal.symbol}) — 30 Day
         </h3>
-        <span className="text-sm text-muted-foreground">{currency}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">{currency}</span>
+          {isUsingFallback && (
+            <span className="text-xs text-yellow-400">Sample data</span>
+          )}
+        </div>
       </div>
       <div className="h-[300px] w-full">
         {isLoading && (
