@@ -3,7 +3,7 @@ import path from "node:path";
 import { createSupabaseAdmin } from "./supabase";
 import { fetchLatestMetalPricesUsd } from "./prices";
 import { isAlertConditionMet, type PriceAlertRow } from "./alerts";
-import { sendPriceAlertEmail } from "./email";
+import { sendPriceAlertEmail as sendGmailPriceAlertEmail } from "./emailService";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
@@ -77,25 +77,12 @@ async function tick(env: EnvLike = process.env) {
 
     if (shouldTrigger) {
       try {
-        const directionText = alert.direction === "above" ? "above" : "below";
-        const subject = `MetalPulse alert: ${symbol} is ${directionText} $${Number(alert.target_price)}`;
-        const html = `
-          <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; line-height: 1.6;">
-            <h2 style="margin: 0 0 12px;">MetalPulse Price Alert</h2>
-            <p style="margin: 0 0 10px;">Your alert was triggered:</p>
-            <ul>
-              <li><b>Asset</b>: ${symbol}</li>
-              <li><b>Condition</b>: ${directionText} $${Number(alert.target_price)}</li>
-              <li><b>Current price</b>: $${currentPrice}</li>
-            </ul>
-            <p style="margin: 16px 0 0; font-size: 12px; color: #666;">If you didn't create this alert, you can ignore this email.</p>
-          </div>
-        `;
-        await sendPriceAlertEmail({
-          to: alert.email,
-          subject,
-          html,
-        });
+        await sendGmailPriceAlertEmail(
+          alert.email,
+          symbol,
+          Number(alert.target_price),
+          currentPrice,
+        );
         console.log(`Alert email sent id=${alert.id} to=${alert.email}`);
       } catch (e) {
         console.error(`Alert email failed id=${alert.id} to=${alert.email}:`, e);
@@ -116,7 +103,8 @@ async function tick(env: EnvLike = process.env) {
 }
 
 async function main() {
-  console.log(`Alerts worker started. Interval: ${INTERVAL_MS}ms`);
+  const provider = process.env.GMAIL_USER ? "gmail" : "none";
+  console.log(`Alerts worker started. Interval: ${INTERVAL_MS}ms. Email provider: ${provider}`);
 
   while (true) {
     const startedAt = Date.now();
