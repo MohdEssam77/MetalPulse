@@ -658,94 +658,22 @@ export async function fetchHistoricalMetalData(
 }
 
 export async function fetchEtfQuotes(): Promise<EtfQuote[]> {
-  const apiKey = import.meta.env.VITE_TWELVEDATA_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Twelve Data API key is not configured (VITE_TWELVEDATA_API_KEY).");
+  const res = await fetch("/api/etfs");
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(t || res.statusText);
   }
 
-  // Twelve Data quote endpoint requires individual requests per symbol
-  // We'll fetch them in parallel for better performance
-  const quotePromises = etfSymbols.map(async (etf) => {
-    const url = `${TWELVEDATA_BASE_URL}/quote?symbol=${encodeURIComponent(
-      etf.symbol,
-    )}&apikey=${encodeURIComponent(apiKey)}`;
+  const payload: unknown = await res.json();
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Unexpected /api/etfs payload");
+  }
 
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.warn(`Failed to fetch ${etf.symbol}: ${res.statusText} - ${errorText}`);
-        return null;
-      }
+  const etfs = (payload as any).etfs;
+  if (!Array.isArray(etfs)) {
+    throw new Error("Unexpected /api/etfs payload");
+  }
 
-      const payload: unknown = await res.json();
-
-      if (!payload || typeof payload !== "object") {
-        console.warn(`Unexpected response for ${etf.symbol}:`, payload);
-        return null;
-      }
-
-      const data = payload as Record<string, unknown>;
-
-      // Handle error responses from Twelve Data
-      if (data.status === "error" || data.code) {
-        console.warn(`Error for ${etf.symbol}:`, data.message || data.info);
-        return null;
-      }
-
-      // Extract price (try multiple possible fields)
-      const price =
-        typeof data.close === "string"
-          ? parseFloat(data.close)
-          : typeof data.close === "number"
-            ? data.close
-            : typeof data.price === "string"
-              ? parseFloat(data.price)
-              : typeof data.price === "number"
-                ? data.price
-                : typeof data.last === "string"
-                  ? parseFloat(data.last)
-                  : typeof data.last === "number"
-                    ? data.last
-                    : 0;
-
-      // Extract change
-      const change =
-        typeof data.change === "string"
-          ? parseFloat(data.change)
-          : typeof data.change === "number"
-            ? data.change
-            : 0;
-
-      // Extract percent change
-      const changePercent =
-        typeof data.percent_change === "string"
-          ? parseFloat(data.percent_change)
-          : typeof data.percent_change === "number"
-            ? data.percent_change
-            : typeof data.change_percent === "string"
-              ? parseFloat(data.change_percent)
-              : typeof data.change_percent === "number"
-                ? data.change_percent
-                : 0;
-
-      return {
-        symbol: etf.symbol,
-        name: (typeof data.name === "string" ? data.name : undefined) ?? etf.name ?? etf.symbol,
-        price: Math.round(price * 100) / 100,
-        change: Math.round(change * 100) / 100,
-        changePercent: Math.round(changePercent * 100) / 100,
-      };
-    } catch (error) {
-      console.warn(`Error fetching ${etf.symbol}:`, error);
-      return null;
-    }
-  });
-
-  const results = await Promise.all(quotePromises);
-  const quotes = results.filter((q): q is EtfQuote => q !== null);
-
-  return quotes;
+  return etfs as EtfQuote[];
 }
 

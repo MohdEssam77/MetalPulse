@@ -3,7 +3,7 @@ import path from "node:path";
 import { createSupabaseAdmin } from "./supabase";
 import { fetchLatestMetalPricesUsd } from "./prices";
 import { isAlertConditionMet, type PriceAlertRow } from "./alerts";
-import { sendPriceAlertEmail } from "./emailService";
+import { sendPriceAlertEmail } from "./email";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
@@ -20,29 +20,6 @@ try {
 } catch (e) {
   supabaseInitError = e instanceof Error ? e.message : String(e);
   console.warn(`Alerts worker started without Supabase configured: ${supabaseInitError}`);
-}
-
-function buildEmailHtml(params: {
-  email: string;
-  assetSymbol: string;
-  direction: "above" | "below";
-  targetPrice: number;
-  currentPrice: number;
-}): string {
-  const { assetSymbol, direction, targetPrice, currentPrice } = params;
-  const dirText = direction === "above" ? "above" : "below";
-  return `
-    <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; line-height: 1.6;">
-      <h2 style="margin: 0 0 12px;">MetalPulse Price Alert</h2>
-      <p style="margin: 0 0 10px;">Your alert was triggered:</p>
-      <ul>
-        <li><b>Asset</b>: ${assetSymbol}</li>
-        <li><b>Condition</b>: ${dirText} $${targetPrice}</li>
-        <li><b>Current price</b>: $${currentPrice}</li>
-      </ul>
-      <p style="margin: 16px 0 0; font-size: 12px; color: #666;">If you didn't create this alert, you can ignore this email.</p>
-    </div>
-  `;
 }
 
 async function tick(env: EnvLike = process.env) {
@@ -64,6 +41,11 @@ async function tick(env: EnvLike = process.env) {
   }
 
   const alerts: PriceAlertDbRow[] = (data ?? []) as any;
+
+  if (alerts.length === 0) {
+    console.log("No active alerts found.");
+    return;
+  }
 
   for (const alert of alerts) {
     const symbol = alert.asset_symbol?.toUpperCase();
@@ -94,17 +76,26 @@ async function tick(env: EnvLike = process.env) {
     );
 
     if (shouldTrigger) {
-      const subject = `MetalPulse alert: ${symbol} is ${alert.direction} $${Number(alert.target_price)}`;
-      const html = buildEmailHtml({
-        email: alert.email,
-        assetSymbol: symbol,
-        direction: alert.direction,
-        targetPrice: Number(alert.target_price),
-        currentPrice,
-      });
-
       try {
-        await sendPriceAlertEmail(alert.email, symbol, Number(alert.target_price), currentPrice);
+        const directionText = alert.direction === "above" ? "above" : "below";
+        const subject = `MetalPulse alert: ${symbol} is ${directionText} $${Number(alert.target_price)}`;
+        const html = `
+          <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; line-height: 1.6;">
+            <h2 style="margin: 0 0 12px;">MetalPulse Price Alert</h2>
+            <p style="margin: 0 0 10px;">Your alert was triggered:</p>
+            <ul>
+              <li><b>Asset</b>: ${symbol}</li>
+              <li><b>Condition</b>: ${directionText} $${Number(alert.target_price)}</li>
+              <li><b>Current price</b>: $${currentPrice}</li>
+            </ul>
+            <p style="margin: 16px 0 0; font-size: 12px; color: #666;">If you didn't create this alert, you can ignore this email.</p>
+          </div>
+        `;
+        await sendPriceAlertEmail({
+          to: alert.email,
+          subject,
+          html,
+        });
         console.log(`Alert email sent id=${alert.id} to=${alert.email}`);
       } catch (e) {
         console.error(`Alert email failed id=${alert.id} to=${alert.email}:`, e);

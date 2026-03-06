@@ -141,6 +141,71 @@ async function getStooqSeries(stooqSymbol: string, limit: number): Promise<Array
   return parseStooqCsv(text);
 }
 
+type EtfQuote = {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+};
+
+const ETF_SYMBOLS: Array<{ symbol: string; name: string }> = [
+  { symbol: "GLD", name: "SPDR Gold Shares" },
+  { symbol: "SLV", name: "iShares Silver Trust" },
+  { symbol: "PPLT", name: "abrdn Platinum ETF" },
+  { symbol: "PALL", name: "abrdn Palladium ETF" },
+  { symbol: "GDX", name: "VanEck Gold Miners" },
+  { symbol: "GDXJ", name: "VanEck Junior Gold Miners" },
+];
+
+async function fetchEtfQuotesFromTwelveData(): Promise<EtfQuote[]> {
+  const apiKey =
+    process.env.TWELVEDATA_API_KEY || process.env.VITE_TWELVEDATA_API_KEY || process.env.TWELVE_DATA_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing TWELVEDATA_API_KEY");
+  }
+
+  const baseUrl = "https://api.twelvedata.com";
+
+  const quotes = await Promise.all(
+    ETF_SYMBOLS.map(async (etf) => {
+      const url = `${baseUrl}/quote?symbol=${encodeURIComponent(etf.symbol)}&apikey=${encodeURIComponent(apiKey)}`;
+      const r = await fetch(url, {
+        headers: {
+          "user-agent": "MetalPulse/1.0",
+        },
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        throw new Error(`Twelve Data fetch failed for ${etf.symbol}: ${r.status} ${r.statusText} - ${t}`);
+      }
+
+      const data: any = await r.json();
+      if (data?.status === "error" || data?.code) {
+        throw new Error(`Twelve Data error for ${etf.symbol}: ${String(data?.message ?? data?.info ?? "unknown")}`);
+      }
+
+      const price = Number.parseFloat(String(data?.close ?? data?.price ?? data?.last ?? ""));
+      const change = Number.parseFloat(String(data?.change ?? "0"));
+      const changePercent = Number.parseFloat(String(data?.percent_change ?? data?.change_percent ?? "0"));
+
+      if (!Number.isFinite(price) || price <= 0) {
+        throw new Error(`Twelve Data returned invalid price for ${etf.symbol}`);
+      }
+
+      return {
+        symbol: etf.symbol,
+        name: (typeof data?.name === "string" && data.name) || etf.name,
+        price: Math.round(price * 100) / 100,
+        change: Number.isFinite(change) ? Math.round(change * 100) / 100 : 0,
+        changePercent: Number.isFinite(changePercent) ? Math.round(changePercent * 100) / 100 : 0,
+      } satisfies EtfQuote;
+    }),
+  );
+
+  return quotes;
+}
+
 function toChartPoints(rows: Array<{ date: string; close: number }>): Array<{ date: string; price: number }> {
   return rows.map((r) => {
     const date = new Date(r.date);
@@ -220,6 +285,15 @@ const server = http.createServer(async (req, res) => {
 
       const results = await Promise.all(promises);
       return sendJson(res, 200, results);
+    }
+
+    if (requestUrl.pathname === "/api/etfs" && method === "GET") {
+      try {
+        const quotes = await fetchEtfQuotesFromTwelveData();
+        return sendJson(res, 200, { etfs: quotes });
+      } catch (e) {
+        return sendJson(res, 503, { error: e instanceof Error ? e.message : String(e) });
+      }
     }
 
     const metalsHistory = requestUrl.pathname.match(/^\/api\/metals\/(XAU|XAG|XPT|XPD)\/history$/i);
