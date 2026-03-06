@@ -77,6 +77,10 @@ type CacheEntry = { ts: number; value: string };
 const stooqCache = new Map<string, CacheEntry>();
 const STOOQ_CACHE_TTL_MS = Number.parseInt(process.env.STOOQ_CACHE_TTL_MS || "1800000", 10);
 
+type SpotSnapshot = { price: number; ts: number };
+const spotCache = new Map<string, SpotSnapshot>();
+const SPOT_CACHE_TTL_MS = Number.parseInt(process.env.SPOT_CACHE_TTL_MS || "300000", 10);
+
 function parseStooqCsv(text: string): Array<{ date: string; close: number }> {
   const trimmed = text.trim();
   if (!trimmed) return [];
@@ -139,6 +143,70 @@ async function getStooqSeries(stooqSymbol: string, limit: number): Promise<Array
   const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&i=d&l=${l}`;
   const text = await fetchTextCached(`series:${stooqSymbol}:${l}`, url);
   return parseStooqCsv(text);
+}
+
+async function fetchTwelveDataSpotPricesUsd(symbols: string[]): Promise<Record<string, number>> {
+  const apiKey =
+    process.env.TWELVEDATA_API_KEY || process.env.VITE_TWELVEDATA_API_KEY || process.env.TWELVE_DATA_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing TWELVEDATA_API_KEY");
+  }
+
+  const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbols.join(","))}&apikey=${encodeURIComponent(apiKey)}`;
+  const r = await fetch(url, {
+    headers: {
+      "user-agent": "MetalPulse/1.0",
+    },
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`Twelve Data fetch failed: ${r.status} ${r.statusText} - ${t}`);
+  }
+
+  const json: any = await r.json();
+  if (json?.status === "error") {
+    throw new Error(`Twelve Data error: ${String(json?.message ?? "unknown")}`);
+  }
+
+  const out: Record<string, number> = {};
+  if (json && typeof json === "object" && !Array.isArray(json)) {
+    for (const [symbol, payload] of Object.entries(json)) {
+      if (!payload || typeof payload !== "object") continue;
+      const priceRaw = (payload as any).price ?? (payload as any).close ?? (payload as any).last;
+      const price = Number.parseFloat(String(priceRaw ?? ""));
+      if (!Number.isFinite(price) || price <= 0) continue;
+      out[String(symbol).toUpperCase()] = Math.round(price * 100) / 100;
+    }
+  }
+
+  const missing = symbols.filter((s) => !Number.isFinite(out[s]));
+  if (missing.length > 0) {
+    throw new Error(`Twelve Data returned missing/invalid prices for: ${missing.join(",")}`);
+  }
+
+  return out;
+}
+
+async function getSpotPriceUsd(symbol: string, fallbackClose: number): Promise<number> {
+  const now = Date.now();
+  const cached = spotCache.get(symbol);
+  if (cached && now - cached.ts < SPOT_CACHE_TTL_MS) {
+    return cached.price;
+  }
+
+  try {
+    const prices = await fetchTwelveDataSpotPricesUsd([symbol]);
+    const price = prices[symbol];
+    if (Number.isFinite(price) && price > 0) {
+      spotCache.set(symbol, { price, ts: now });
+      return price;
+    }
+  } catch {
+    // fall back
+  }
+
+  spotCache.set(symbol, { price: fallbackClose, ts: now });
+  return fallbackClose;
 }
 
 type EtfQuote = {
@@ -248,13 +316,14 @@ const server = http.createServer(async (req, res) => {
         const last = rows[rows.length - 1]!;
         const prev = rows[rows.length - 2]!;
 
-        const price = last.close;
-        const change = price - prev.close;
+        const spotPrice = await getSpotPriceUsd(symbol, last.close);
+        const change = spotPrice - prev.close;
         const changePercent = prev.close > 0 ? (change / prev.close) * 100 : 0;
 
-        const prices = rows.map((r) => r.close).filter((p) => Number.isFinite(p) && p > 0);
-        const high = prices.length ? Math.max(...prices) : price;
-        const low = prices.length ? Math.min(...prices) : price;
+        const dailyWindow = rows.slice(Math.max(rows.length - 3, 0));
+        const dailyPrices = dailyWindow.map((r) => r.close).filter((p) => Number.isFinite(p) && p > 0);
+        const high = dailyPrices.length ? Math.max(...dailyPrices) : spotPrice;
+        const low = dailyPrices.length ? Math.min(...dailyPrices) : spotPrice;
 
         return {
           id:
@@ -274,7 +343,7 @@ const server = http.createServer(async (req, res) => {
                   ? "Platinum"
                   : "Palladium",
           symbol,
-          price: Math.round(price * 100) / 100,
+          price: Math.round(spotPrice * 100) / 100,
           change: Math.round(change * 100) / 100,
           changePercent: Math.round(changePercent * 100) / 100,
           high24h: Math.round(high * 100) / 100,
