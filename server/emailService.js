@@ -20,7 +20,7 @@ async function createTransporter() {
     throw new Error("Missing GMAIL_APP_PASSWORD");
   }
 
-  const port = Number.parseInt(process.env.GMAIL_SMTP_PORT || "465", 10);
+  const port = Number.parseInt(process.env.GMAIL_SMTP_PORT || "587", 10);
   const secure = port === 465;
 
   // Force IPv4 by resolving smtp.gmail.com to an IPv4 address before connecting.
