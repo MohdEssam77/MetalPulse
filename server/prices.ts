@@ -93,16 +93,6 @@ function parseStooqCsv(text: string): Array<{ date: string; close: number }> {
 }
 
 export async function fetchLatestMetalPricesUsd(): Promise<Record<string, number>> {
-  const twelveDataApiKey =
-    process.env.TWELVEDATA_API_KEY || process.env.VITE_TWELVEDATA_API_KEY || process.env.TWELVE_DATA_API_KEY;
-  if (twelveDataApiKey) {
-    try {
-      return await fetchTwelveDataMetalPricesUsd(twelveDataApiKey);
-    } catch (e) {
-      console.warn(`TwelveData fetch failed, falling back to Stooq:`, e instanceof Error ? e.message : String(e));
-    }
-  }
-
   const days = 2;
 
   const entries = await Promise.all(
@@ -135,5 +125,23 @@ export async function fetchLatestMetalPricesUsd(): Promise<Record<string, number
     }),
   );
 
-  return Object.fromEntries(entries);
+  const prices = Object.fromEntries(entries);
+
+  const twelveDataApiKey =
+    process.env.TWELVEDATA_API_KEY || process.env.VITE_TWELVEDATA_API_KEY || process.env.TWELVE_DATA_API_KEY;
+  if (twelveDataApiKey && Object.keys(prices).length < Object.keys(METALS_SYMBOL_MAP).length) {
+    try {
+      const twelvePrices = await fetchTwelveDataMetalPricesUsd(twelveDataApiKey);
+      for (const [symbol, price] of Object.entries(twelvePrices)) {
+        if (!prices[symbol]) {
+          prices[symbol] = price;
+        }
+      }
+      console.warn(`Stooq fetch incomplete, filled missing symbols with TwelveData`);
+    } catch (e) {
+      console.warn(`TwelveData fallback failed:`, e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return prices;
 }
