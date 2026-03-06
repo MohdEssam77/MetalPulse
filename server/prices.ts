@@ -5,17 +5,26 @@ const METALS_SYMBOL_MAP: Record<string, string> = {
   XPD: "xpdusd",
 };
 
+async function fetchWithTimeout(url: string, timeoutMs = 30000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch (e) {
+    clearTimeout(id);
+    throw e;
+  }
+}
+
 async function fetchTwelveDataMetalPricesUsd(apiKey: string): Promise<Record<string, number>> {
   const symbols = Object.keys(METALS_SYMBOL_MAP);
   const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(
     symbols.join(","),
   )}&apikey=${encodeURIComponent(apiKey)}`;
 
-  const res = await fetch(url, {
-    headers: {
-      "user-agent": "MetalPulse/1.0",
-    },
-  });
+  const res = await fetchWithTimeout(url, 15000);
 
   if (!res.ok) {
     const t = await res.text().catch(() => "");
@@ -89,8 +98,8 @@ export async function fetchLatestMetalPricesUsd(): Promise<Record<string, number
   if (twelveDataApiKey) {
     try {
       return await fetchTwelveDataMetalPricesUsd(twelveDataApiKey);
-    } catch {
-      // fall through to Stooq
+    } catch (e) {
+      console.warn(`TwelveData fetch failed, falling back to Stooq:`, e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -98,23 +107,31 @@ export async function fetchLatestMetalPricesUsd(): Promise<Record<string, number
 
   const entries = await Promise.all(
     Object.entries(METALS_SYMBOL_MAP).map(async ([symbol, stooqSymbol]) => {
-      const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&i=d&l=${days}`;
-      const res = await fetch(url, {
-        headers: {
-          "user-agent": "MetalPulse/1.0",
-        },
-      });
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(`Stooq fetch failed for ${symbol}: ${res.status} ${res.statusText} - ${t}`);
+      let lastError: Error | null = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&i=d&l=${days}`;
+          const res = await fetchWithTimeout(url, 10000);
+          if (!res.ok) {
+            const t = await res.text().catch(() => "");
+            throw new Error(`Stooq fetch failed for ${symbol}: ${res.status} ${res.statusText} - ${t}`);
+          }
+          const text = await res.text();
+          const rows = parseStooqCsv(text);
+          if (rows.length === 0) {
+            throw new Error(`Stooq returned no rows for ${symbol}`);
+          }
+          const last = rows[rows.length - 1]!;
+          return [symbol, Math.round(last.close * 100) / 100] as const;
+        } catch (e) {
+          lastError = e instanceof Error ? e : new Error(String(e));
+          if (attempt < 2) {
+            console.warn(`Stooq fetch attempt ${attempt} failed for ${symbol}, retrying...`);
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
       }
-      const text = await res.text();
-      const rows = parseStooqCsv(text);
-      if (rows.length === 0) {
-        throw new Error(`Stooq returned no rows for ${symbol}`);
-      }
-      const last = rows[rows.length - 1]!;
-      return [symbol, Math.round(last.close * 100) / 100] as const;
+      throw lastError || new Error(`Stooq fetch failed for ${symbol} after retries`);
     }),
   );
 
