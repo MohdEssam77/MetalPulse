@@ -4,6 +4,7 @@ import { createSupabaseAdmin } from "./supabase";
 import { fetchLatestMetalPricesUsd } from "./prices";
 import { isAlertConditionMet, type PriceAlertRow } from "./alerts";
 import { sendPriceAlertEmail as sendGmailPriceAlertEmail } from "./emailService";
+import { sendPriceAlertEmail as sendSendGridPriceAlertEmail } from "./sendgridEmail";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
@@ -77,12 +78,21 @@ async function tick(env: EnvLike = process.env) {
 
     if (shouldTrigger) {
       try {
-        await sendGmailPriceAlertEmail(
-          alert.email,
-          symbol,
-          Number(alert.target_price),
-          currentPrice,
-        );
+        if (process.env.SENDGRID_API_KEY) {
+          await sendSendGridPriceAlertEmail({
+            toEmail: alert.email,
+            assetSymbol: symbol,
+            thresholdPrice: Number(alert.target_price),
+            currentPrice,
+          });
+        } else {
+          await sendGmailPriceAlertEmail(
+            alert.email,
+            symbol,
+            Number(alert.target_price),
+            currentPrice,
+          );
+        }
         console.log(`Alert email sent id=${alert.id} to=${alert.email}`);
       } catch (e) {
         console.error(`Alert email failed id=${alert.id} to=${alert.email}:`, e);
@@ -103,7 +113,7 @@ async function tick(env: EnvLike = process.env) {
 }
 
 async function main() {
-  const provider = process.env.GMAIL_USER ? "gmail" : "none";
+  const provider = process.env.SENDGRID_API_KEY ? "sendgrid" : process.env.GMAIL_USER ? "gmail" : "none";
   console.log(`Alerts worker started. Interval: ${INTERVAL_MS}ms. Email provider: ${provider}`);
 
   while (true) {
