@@ -307,52 +307,81 @@ const server = http.createServer(async (req, res) => {
 
     if (requestUrl.pathname === "/api/metals" && method === "GET") {
       const days = 30;
-      const promises = Object.entries(METALS_STOOQ_SYMBOL_MAP).map(async ([symbol, stooqSymbol]) => {
-        const rows = await getStooqSeries(stooqSymbol, days + 2);
-        if (rows.length < 2) {
-          throw new Error(`Not enough data points for ${symbol}`);
+      const tasks = Object.entries(METALS_STOOQ_SYMBOL_MAP).map(async ([symbol, stooqSymbol]) => {
+        try {
+          const rows = await getStooqSeries(stooqSymbol, days + 2);
+          const last = rows[rows.length - 1];
+          const prev = rows.length >= 2 ? rows[rows.length - 2] : null;
+
+          if (!last) {
+            throw new Error(`No Stooq data for ${symbol}`);
+          }
+
+          const spotPrice = await getSpotPriceUsd(symbol, last.close);
+          const change = prev ? spotPrice - prev.close : 0;
+          const changePercent = prev && prev.close > 0 ? (change / prev.close) * 100 : 0;
+
+          const dailyWindow = rows.slice(Math.max(rows.length - 3, 0));
+          const dailyPrices = dailyWindow.map((r) => r.close).filter((p) => Number.isFinite(p) && p > 0);
+          const high = dailyPrices.length ? Math.max(...dailyPrices) : spotPrice;
+          const low = dailyPrices.length ? Math.min(...dailyPrices) : spotPrice;
+
+          return {
+            id:
+              symbol === "XAU"
+                ? "gold"
+                : symbol === "XAG"
+                  ? "silver"
+                  : symbol === "XPT"
+                    ? "platinum"
+                    : "palladium",
+            name:
+              symbol === "XAU"
+                ? "Gold"
+                : symbol === "XAG"
+                  ? "Silver"
+                  : symbol === "XPT"
+                    ? "Platinum"
+                    : "Palladium",
+            symbol,
+            price: Math.round(spotPrice * 100) / 100,
+            change: Math.round(change * 100) / 100,
+            changePercent: Math.round(changePercent * 100) / 100,
+            high24h: Math.round(high * 100) / 100,
+            low24h: Math.round(low * 100) / 100,
+            effectiveDate: last.date,
+          };
+        } catch (e) {
+          return {
+            id:
+              symbol === "XAU"
+                ? "gold"
+                : symbol === "XAG"
+                  ? "silver"
+                  : symbol === "XPT"
+                    ? "platinum"
+                    : "palladium",
+            name:
+              symbol === "XAU"
+                ? "Gold"
+                : symbol === "XAG"
+                  ? "Silver"
+                  : symbol === "XPT"
+                    ? "Platinum"
+                    : "Palladium",
+            symbol,
+            price: 0,
+            change: 0,
+            changePercent: 0,
+            high24h: 0,
+            low24h: 0,
+            effectiveDate: null,
+            error: e instanceof Error ? e.message : String(e),
+          };
         }
-
-        const last = rows[rows.length - 1]!;
-        const prev = rows[rows.length - 2]!;
-
-        const spotPrice = await getSpotPriceUsd(symbol, last.close);
-        const change = spotPrice - prev.close;
-        const changePercent = prev.close > 0 ? (change / prev.close) * 100 : 0;
-
-        const dailyWindow = rows.slice(Math.max(rows.length - 3, 0));
-        const dailyPrices = dailyWindow.map((r) => r.close).filter((p) => Number.isFinite(p) && p > 0);
-        const high = dailyPrices.length ? Math.max(...dailyPrices) : spotPrice;
-        const low = dailyPrices.length ? Math.min(...dailyPrices) : spotPrice;
-
-        return {
-          id:
-            symbol === "XAU"
-              ? "gold"
-              : symbol === "XAG"
-                ? "silver"
-                : symbol === "XPT"
-                  ? "platinum"
-                  : "palladium",
-          name:
-            symbol === "XAU"
-              ? "Gold"
-              : symbol === "XAG"
-                ? "Silver"
-                : symbol === "XPT"
-                  ? "Platinum"
-                  : "Palladium",
-          symbol,
-          price: Math.round(spotPrice * 100) / 100,
-          change: Math.round(change * 100) / 100,
-          changePercent: Math.round(changePercent * 100) / 100,
-          high24h: Math.round(high * 100) / 100,
-          low24h: Math.round(low * 100) / 100,
-          effectiveDate: last.date,
-        };
       });
 
-      const results = await Promise.all(promises);
+      const results = await Promise.all(tasks);
       return sendJson(res, 200, results);
     }
 
