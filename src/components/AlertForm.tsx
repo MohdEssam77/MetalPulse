@@ -5,12 +5,19 @@ import { Input } from "@/components/ui/input";
 import { METALS_DATA, ETFS_DATA } from "@/lib/metals-data";
 import { useMetals } from "@/hooks/use-metals";
 import { useEtfs } from "@/hooks/use-etfs";
+import { useCurrency } from "@/components/currency-provider";
+import { useUsdToEurRate } from "@/hooks/use-currency-rate";
+import { convertUsdToCurrency, formatMoney } from "@/lib/currency";
 import { toast } from "sonner";
 
 const AlertForm = () => {
   const [email, setEmail] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
   const [direction, setDirection] = useState<"above" | "below">("above");
+
+  const { currency } = useCurrency();
+  const { data: fx } = useUsdToEurRate();
+  const usdToEurRate = fx?.rate ?? null;
 
   // Use live data instead of dummy data
   const { data: liveMetals } = useMetals();
@@ -75,12 +82,19 @@ const AlertForm = () => {
       return;
     }
 
+    const targetUsd = Number(targetPrice);
+    const targetInCurrency = convertUsdToCurrency(targetUsd, currency, usdToEurRate);
+
     toast.success(
-      `Alert set! We'll notify you at ${email} when ${currentAsset.label} goes ${direction} $${targetPrice}`,
+      `Alert set! We'll notify you at ${email} when ${currentAsset.label} goes ${direction} ${formatMoney(targetInCurrency, currency)}`,
     );
     setEmail("");
     setTargetPrice("");
   };
+
+  const currentPriceInCurrency = currentAsset
+    ? convertUsdToCurrency(currentAsset.price, currency, usdToEurRate)
+    : 0;
 
   return (
     <div className="rounded-xl border border-border bg-gradient-card p-6 md:p-8">
@@ -111,14 +125,14 @@ const AlertForm = () => {
             <optgroup label="Precious Metals">
               {metals.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name} ({m.symbol}) — ${m.price.toLocaleString()}
+                  {m.name} ({m.symbol}) — {formatMoney(convertUsdToCurrency(m.price, currency, usdToEurRate), currency)}
                 </option>
               ))}
             </optgroup>
             <optgroup label="ETFs">
               {etfs.map((e) => (
                 <option key={e.symbol} value={e.symbol.toLowerCase()}>
-                  {e.name} ({e.symbol}) — ${e.price.toFixed(2)}
+                  {e.name} ({e.symbol}) — {formatMoney(convertUsdToCurrency(e.price, currency, usdToEurRate), currency)}
                 </option>
               ))}
             </optgroup>
@@ -159,14 +173,14 @@ const AlertForm = () => {
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-foreground">
-            Target Price (USD)
+            Target Price ({currency})
           </label>
           <Input
             type="number"
             step="0.01"
             value={targetPrice}
             onChange={(e) => setTargetPrice(e.target.value)}
-            placeholder={`Current: $${currentAsset.price.toLocaleString()}`}
+            placeholder={`Current: ${formatMoney(currentPriceInCurrency, currency)}`}
             className="border-border bg-secondary text-foreground placeholder:text-muted-foreground focus-visible:ring-primary"
           />
         </div>
