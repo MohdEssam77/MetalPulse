@@ -69,14 +69,13 @@ async function tick(env: EnvLike = process.env) {
       currentPrice,
     });
 
-    const prev = alert.last_is_condition_met;
-    const shouldTrigger = (prev == null && isMet === true) || (prev === false && isMet === true);
-
     console.log(
-      `Alert eval id=${alert.id} email=${alert.email} symbol=${symbol} dir=${alert.direction} target=${Number(alert.target_price)} current=${currentPrice} prev=${prev} isMet=${isMet} shouldTrigger=${shouldTrigger}`,
+      `Alert eval id=${alert.id} email=${alert.email} symbol=${symbol} dir=${alert.direction} target=${Number(alert.target_price)} current=${currentPrice} isMet=${isMet}`,
     );
 
-    if (shouldTrigger) {
+    // One-shot alert: when condition is met and email is sent, delete the row.
+    // If sending fails, keep the row so it can retry next tick.
+    if (isMet === true) {
       try {
         if (process.env.SENDGRID_API_KEY) {
           await sendSendGridPriceAlertEmail({
@@ -86,27 +85,17 @@ async function tick(env: EnvLike = process.env) {
             currentPrice,
           });
         } else {
-          await sendGmailPriceAlertEmail(
-            alert.email,
-            symbol,
-            Number(alert.target_price),
-            currentPrice,
-          );
+          await sendGmailPriceAlertEmail(alert.email, symbol, Number(alert.target_price), currentPrice);
         }
-        console.log(`Alert email sent id=${alert.id} to=${alert.email}`);
+
+        const { error: deleteError } = await supabase.from("price_alerts").delete().eq("id", alert.id);
+        if (deleteError) {
+          throw new Error(deleteError.message);
+        }
+
+        console.log(`Alert email sent and alert deleted id=${alert.id} to=${alert.email}`);
       } catch (e) {
-        console.error(`Alert email failed id=${alert.id} to=${alert.email}:`, e);
-      }
-    }
-
-    if (prev == null || prev !== isMet) {
-      const { error: updateError } = await supabase
-        .from("price_alerts")
-        .update({ last_is_condition_met: isMet })
-        .eq("id", alert.id);
-
-      if (updateError) {
-        throw new Error(updateError.message);
+        console.error(`Alert send/delete failed id=${alert.id} to=${alert.email}:`, e);
       }
     }
   }
