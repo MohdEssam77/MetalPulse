@@ -32,6 +32,13 @@ const PriceChart = ({ metal }: PriceChartProps) => {
   const { data: fx } = useUsdToEurRate();
   const rate = fx?.rate ?? null;
 
+  const formatXAxisTick = (value: unknown) => {
+    const raw = typeof value === "string" ? value : String(value ?? "");
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
   // Fetch real historical data
   const { data: historicalData, isLoading } = useQuery({
     queryKey: ["historical", metal.symbol],
@@ -83,45 +90,52 @@ const PriceChart = ({ metal }: PriceChartProps) => {
         )}
         {!isLoading && (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={displayData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-            <defs>
-              <linearGradient id={`gradient-${metal.id}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={colors.fill} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={colors.fill} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 14%, 18%)" />
-            <XAxis
-              dataKey="date"
-              tick={{ fill: "hsl(220, 10%, 50%)", fontSize: 12 }}
-              axisLine={{ stroke: "hsl(220, 14%, 18%)" }}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fill: "hsl(220, 10%, 50%)", fontSize: 12 }}
-              axisLine={false}
-              tickLine={false}
-              domain={["auto", "auto"]}
-              tickFormatter={(v) => formatMoney(v, currency)}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "hsl(220, 18%, 10%)",
-                border: "1px solid hsl(220, 14%, 18%)",
-                borderRadius: "8px",
-                color: "hsl(40, 20%, 92%)",
-              }}
-              formatter={(value: number) => [formatMoney(value, currency), "Price"]}
-            />
-            <Area
-              type="monotone"
-              dataKey="price"
-              stroke={colors.stroke}
-              strokeWidth={2}
-              fill={`url(#gradient-${metal.id})`}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+            <AreaChart data={displayData} margin={{ top: 8, right: 16, left: 0, bottom: 22 }}>
+              <defs>
+                <linearGradient id={`gradient-${metal.id}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={colors.fill} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={colors.fill} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 14%, 18%)" />
+              <XAxis
+                dataKey="date"
+                tick={{ fill: "hsl(220, 10%, 50%)", fontSize: 12 }}
+                axisLine={{ stroke: "hsl(220, 14%, 18%)" }}
+                tickLine={false}
+                tickMargin={10}
+                minTickGap={18}
+                interval="preserveStartEnd"
+                padding={{ left: 8, right: 8 }}
+                tickFormatter={formatXAxisTick}
+              />
+              <YAxis
+                tick={{ fill: "hsl(220, 10%, 50%)", fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+                domain={["auto", "auto"]}
+                tickFormatter={(v) => formatMoney(v, currency)}
+                width={84}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(220, 18%, 10%)",
+                  border: "1px solid hsl(220, 14%, 18%)",
+                  borderRadius: "8px",
+                  color: "hsl(40, 20%, 92%)",
+                }}
+                labelFormatter={(label) => formatXAxisTick(label)}
+                formatter={(value: number) => [formatMoney(value, currency), "Price"]}
+              />
+              <Area
+                type="monotone"
+                dataKey="price"
+                stroke={colors.stroke}
+                strokeWidth={2}
+                fill={`url(#gradient-${metal.id})`}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         )}
       </div>
     </div>
