@@ -66,6 +66,63 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   return JSON.parse(raw);
 }
 
+type AiChatMessage = { role: "user" | "assistant"; content: string };
+
+function getGeminiApiKey(bodyKey: unknown): string | null {
+  if (typeof bodyKey === "string" && bodyKey.trim()) return bodyKey.trim();
+  const envKey = process.env.GEMINI_API_KEY;
+  if (typeof envKey === "string" && envKey.trim()) return envKey.trim();
+  return null;
+}
+
+async function callGeminiChat(params: {
+  apiKey: string;
+  messages: AiChatMessage[];
+}): Promise<string> {
+  const model = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(params.apiKey)}`;
+
+  const systemInstruction =
+    "You are a data analyst and investing expert focused on precious metals (XAU, XAG, XPT, XPD) and metal ETFs (GLD, SLV, PPLT, PALL, GDX, GDXJ). Provide clear, structured analysis and practical suggestions, but do not present it as financial advice. You do not have live browsing in this chat. If the user asks about recent news, ask them to paste headlines/links and then analyze how that news could affect prices and sentiment. Use cautious language, mention uncertainty, and suggest risk management considerations.";
+
+  const contents = params.messages
+    .filter((m) => m && typeof m.content === "string" && m.content.trim())
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
+
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      contents,
+      generationConfig: {
+        temperature: 0.4,
+        topP: 0.9,
+        maxOutputTokens: 800,
+      },
+    }),
+  });
+
+  const text = await r.text().catch(() => "");
+  if (!r.ok) {
+    throw new Error(`Gemini error ${r.status}: ${text || r.statusText}`);
+  }
+
+  const json: any = text ? JSON.parse(text) : null;
+  const reply =
+    json?.candidates?.[0]?.content?.parts
+      ?.map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+      .join("") ??
+    "";
+
+  return String(reply || "").trim();
+}
+
 const METALS_STOOQ_SYMBOL_MAP: Record<string, string> = {
   XAU: "xauusd",
   XAG: "xagusd",
@@ -391,6 +448,46 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { etfs: quotes });
       } catch (e) {
         return sendJson(res, 503, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    if (requestUrl.pathname === "/api/ai/chat" && method === "POST") {
+      const body = await readJsonBody(req);
+      const b = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+      const messagesRaw = b?.messages;
+      const apiKey = getGeminiApiKey(b?.apiKey);
+      if (!apiKey) {
+        return sendJson(res, 503, { error: "AI is not configured (missing GEMINI_API_KEY)" });
+      }
+
+      if (!Array.isArray(messagesRaw)) {
+        return sendJson(res, 400, { error: "Invalid payload: messages must be an array" });
+      }
+
+      const messages: AiChatMessage[] = messagesRaw
+        .map((m) => (m && typeof m === "object" ? (m as any) : null))
+        .filter(Boolean)
+        .map((m) => ({
+          role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+          content: typeof m.content === "string" ? m.content : "",
+        }))
+        .filter((m) => m.content.trim().length > 0);
+
+      if (messages.length === 0) {
+        return sendJson(res, 400, { error: "Invalid payload: messages is empty" });
+      }
+
+      try {
+        const reply = await callGeminiChat({ apiKey, messages });
+        if (!reply) {
+          return sendJson(res, 502, { error: "Empty response from AI" });
+        }
+        return sendJson(res, 200, { reply });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const lower = msg.toLowerCase();
+        const status = lower.includes(" 401") || lower.includes(" 403") ? 403 : lower.includes(" 429") ? 429 : 502;
+        return sendJson(res, status, { error: msg });
       }
     }
 
