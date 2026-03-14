@@ -79,7 +79,7 @@ async function callGeminiChat(params: {
   apiKey: string;
   messages: AiChatMessage[];
 }): Promise<string> {
-  const model = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(params.apiKey)}`;
 
   const systemInstruction =
@@ -486,7 +486,7 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         const lower = msg.toLowerCase();
-        const status = lower.includes(" 401") || lower.includes(" 403") ? 403 : lower.includes(" 429") ? 429 : 502;
+        const status = lower.includes(" 401") || lower.includes(" 403") || lower.includes(" 400") ? 401 : lower.includes(" 429") ? 429 : 502;
         return sendJson(res, status, { error: msg });
       }
     }
