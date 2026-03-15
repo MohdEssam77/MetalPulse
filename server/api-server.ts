@@ -150,8 +150,18 @@ type NewsCache = { ts: number; articles: NewsArticle[] };
 let newsCache: NewsCache | null = null;
 const NEWS_CACHE_TTL_MS = Number.parseInt(process.env.NEWS_CACHE_TTL_MS || "1800000", 10);
 
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").trim();
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+}
+
+function stripHtml(raw: string): string {
+  // Decode entities first so entity-encoded tags like &lt;a&gt; also get stripped
+  const decoded = decodeEntities(raw);
+  return decoded.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 }
 
 function extractRssTag(xml: string, tag: string): string {
@@ -160,8 +170,9 @@ function extractRssTag(xml: string, tag: string): string {
 }
 
 const NEWS_RSS_FEEDS = [
+  // Google News — recent articles only (within 3 days), sorted by date
   {
-    url: "https://news.google.com/rss/search?q=gold+silver+platinum+precious+metals+ETF&hl=en-US&gl=US&ceid=US:en",
+    url: "https://news.google.com/rss/search?q=gold+silver+precious+metals+price+when:3d&hl=en-US&gl=US&ceid=US:en",
     source: "Google News",
   },
   {
@@ -181,13 +192,16 @@ async function fetchRssFeed(url: string, sourceName: string): Promise<NewsArticl
     if (!r.ok) throw new Error(`RSS ${r.status} from ${url}`);
     const xml = await r.text();
     const items = xml.split("<item>").slice(1);
-    return items.slice(0, 15).map((item) => {
+    return items.slice(0, 20).map((item) => {
       const title = stripHtml(extractRssTag(item, "title"));
       const description = stripHtml(extractRssTag(item, "description"));
       const rawLink = extractRssTag(item, "link").trim();
       const pubDate = extractRssTag(item, "pubDate").trim();
-      const summary = description.length > 220 ? description.slice(0, 220).replace(/\s+\S*$/, "") + "…" : description;
-      const sourceTag = extractRssTag(item, "source").trim() || sourceName;
+      // Use description as summary only if it has meaningful text (not just a link)
+      const summary = description.length > 30 && !description.startsWith("http")
+        ? (description.length > 220 ? description.slice(0, 220).replace(/\s+\S*$/, "") + "…" : description)
+        : "";
+      const sourceTag = stripHtml(extractRssTag(item, "source")).trim() || sourceName;
       return {
         title,
         summary,
@@ -208,14 +222,21 @@ async function getNews(): Promise<NewsArticle[]> {
   let articles: NewsArticle[] = [];
   for (const feed of NEWS_RSS_FEEDS) {
     try {
-      articles = await fetchRssFeed(feed.url, feed.source);
-      if (articles.length > 0) break;
+      const fetched = await fetchRssFeed(feed.url, feed.source);
+      if (fetched.length > 0) {
+        articles = fetched;
+        break;
+      }
     } catch (e) {
       console.warn(`[news] Feed failed (${feed.url}):`, e instanceof Error ? e.message : e);
     }
   }
 
   if (articles.length === 0) throw new Error("All news feeds failed");
+
+  // Sort newest first
+  articles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
   newsCache = { ts: now, articles };
   return articles;
 }

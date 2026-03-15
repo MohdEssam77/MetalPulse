@@ -74,9 +74,7 @@ const Navbar = () => {
                 News
               </span>
             </a>
-          </div>
-
-          <DropdownMenu>
+            <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 className="hidden items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground md:flex"
@@ -121,6 +119,9 @@ const Navbar = () => {
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
+
+          
 
           <Sheet>
             <SheetTrigger asChild>

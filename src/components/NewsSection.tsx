@@ -78,9 +78,11 @@ export default function NewsSection() {
                 {article.title}
               </h3>
 
-              <p className="line-clamp-3 flex-1 text-xs text-muted-foreground leading-relaxed">
-                {article.summary}
-              </p>
+              {article.summary && (
+                <p className="line-clamp-3 flex-1 text-xs text-muted-foreground leading-relaxed">
+                  {article.summary}
+                </p>
+              )}
 
               <div className="mt-3 flex items-center gap-1 text-xs font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity">
                 Read more <ExternalLink className="h-3 w-3" />
