@@ -78,12 +78,17 @@ function getGeminiApiKey(bodyKey: unknown): string | null {
 async function callGeminiChat(params: {
   apiKey: string;
   messages: AiChatMessage[];
+  newsContext?: string;
 }): Promise<string> {
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(params.apiKey)}`;
 
+  const newsSection = params.newsContext
+    ? `\n\n## Current News Headlines (fetched live from the site):\n${params.newsContext}\nWhen the user asks about news, reference these headlines and their links. You can discuss how they might affect prices.`
+    : "";
+
   const systemInstruction =
-    "You are a data analyst and investing expert focused on precious metals (XAU, XAG, XPT, XPD) and metal ETFs (GLD, SLV, PPLT, PALL, GDX, GDXJ). Provide clear, structured analysis and practical suggestions, but do not present it as financial advice. You do not have live browsing in this chat. If the user asks about recent news, ask them to paste headlines/links and then analyze how that news could affect prices and sentiment. Use cautious language, mention uncertainty, and suggest risk management considerations.";
+    "You are a data analyst and investing expert focused on precious metals (XAU, XAG, XPT, XPD) and metal ETFs (GLD, SLV, PPLT, PALL, GDX, GDXJ). Provide clear, structured analysis and practical suggestions, but do not present it as financial advice. Use cautious language, mention uncertainty, and suggest risk management considerations." + newsSection;
 
   const contents = params.messages
     .filter((m) => m && typeof m.content === "string" && m.content.trim())
@@ -198,9 +203,14 @@ async function fetchRssFeed(url: string, sourceName: string): Promise<NewsArticl
       const rawLink = extractRssTag(item, "link").trim();
       const pubDate = extractRssTag(item, "pubDate").trim();
       // Use description as summary only if it has meaningful text (not just a link)
-      const summary = description.length > 30 && !description.startsWith("http")
-        ? (description.length > 220 ? description.slice(0, 220).replace(/\s+\S*$/, "") + "…" : description)
-        : "";
+      // Suppress summary if it's just the title repeated (Google News pattern)
+      const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 50);
+      const isRepeat = description.length < 30
+        || description.startsWith("http")
+        || normalize(description).startsWith(normalize(title));
+      const summary = isRepeat
+        ? ""
+        : (description.length > 220 ? description.slice(0, 220).replace(/\s+\S*$/, "") + "…" : description);
       const sourceTag = stripHtml(extractRssTag(item, "source")).trim() || sourceName;
       return {
         title,
@@ -590,7 +600,15 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const reply = await callGeminiChat({ apiKey, messages });
+        // Inject cached news into AI context (only if already cached, no extra fetch)
+        let newsContext: string | undefined;
+        if (newsCache && newsCache.articles.length > 0) {
+          newsContext = newsCache.articles
+            .slice(0, 12)
+            .map((a, i) => `${i + 1}. "${a.title}" — ${a.source} — ${a.link}`)
+            .join("\n");
+        }
+        const reply = await callGeminiChat({ apiKey, messages, newsContext });
         if (!reply) {
           return sendJson(res, 502, { error: "Empty response from AI" });
         }
