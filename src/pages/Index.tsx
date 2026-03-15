@@ -5,6 +5,7 @@ import PriceChart from "@/components/PriceChart";
 import ETFTable from "@/components/ETFTable";
 import AlertForm from "@/components/AlertForm";
 import Footer from "@/components/Footer";
+import NewsSection from "@/components/NewsSection";
 import { METALS_DATA } from "@/lib/metals-data";
 import { useMetals } from "@/hooks/use-metals";
 import { TrendingUp, Shield, Bell } from "lucide-react";
@@ -162,6 +163,10 @@ const Index = () => {
           </div>
         </div>
       </section>
+
+      <div className="container mx-auto px-4">
+        <NewsSection />
+      </div>
 
       <Footer />
     </div>

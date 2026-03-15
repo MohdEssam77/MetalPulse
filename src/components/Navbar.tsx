@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart3, Bell, Settings, Sun, Menu } from "lucide-react";
+import { BarChart3, Bell, Settings, Sun, Menu, Newspaper, TrendingUp, LineChart } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTheme } from "next-themes";
 
@@ -51,15 +51,27 @@ const Navbar = () => {
         <div className="flex items-center gap-2">
           <div className="hidden items-center gap-6 md:flex">
             <a href="#prices" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
-              Prices
+              <span className="flex items-center gap-1">
+                <TrendingUp className="h-4 w-4" />
+                Prices
+              </span>
             </a>
             <a href="#etfs" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
-              ETFs
+              <span className="flex items-center gap-1">
+                <LineChart className="h-4 w-4" />
+                ETFs
+              </span>
             </a>
             <a href="#alerts" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
               <span className="flex items-center gap-1">
                 <Bell className="h-4 w-4" />
                 Alerts
+              </span>
+            </a>
+            <a href="#news" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+              <span className="flex items-center gap-1">
+                <Newspaper className="h-4 w-4" />
+                News
               </span>
             </a>
           </div>
@@ -126,15 +138,27 @@ const Navbar = () => {
 
               <div className="mt-6 grid gap-4">
                 <a href="#prices" className="text-sm text-foreground">
-                  Prices
+                  <span className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    Prices
+                  </span>
                 </a>
                 <a href="#etfs" className="text-sm text-foreground">
-                  ETFs
+                  <span className="flex items-center gap-2">
+                    <LineChart className="h-4 w-4" />
+                    ETFs
+                  </span>
                 </a>
                 <a href="#alerts" className="text-sm text-foreground">
                   <span className="flex items-center gap-2">
                     <Bell className="h-4 w-4" />
                     Alerts
+                  </span>
+                </a>
+                <a href="#news" className="text-sm text-foreground">
+                  <span className="flex items-center gap-2">
+                    <Newspaper className="h-4 w-4" />
+                    News
                   </span>
                 </a>
 

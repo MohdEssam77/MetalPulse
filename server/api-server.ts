@@ -138,6 +138,88 @@ type SpotSnapshot = { price: number; ts: number };
 const spotCache = new Map<string, SpotSnapshot>();
 const SPOT_CACHE_TTL_MS = Number.parseInt(process.env.SPOT_CACHE_TTL_MS || "300000", 10);
 
+type NewsArticle = {
+  title: string;
+  summary: string;
+  link: string;
+  source: string;
+  publishedAt: string;
+};
+
+type NewsCache = { ts: number; articles: NewsArticle[] };
+let newsCache: NewsCache | null = null;
+const NEWS_CACHE_TTL_MS = Number.parseInt(process.env.NEWS_CACHE_TTL_MS || "1800000", 10);
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").trim();
+}
+
+function extractRssTag(xml: string, tag: string): string {
+  const m = xml.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, "i"));
+  return m ? m[1]!.trim() : "";
+}
+
+const NEWS_RSS_FEEDS = [
+  {
+    url: "https://news.google.com/rss/search?q=gold+silver+platinum+precious+metals+ETF&hl=en-US&gl=US&ceid=US:en",
+    source: "Google News",
+  },
+  {
+    url: "https://www.mining.com/feed/",
+    source: "Mining.com",
+  },
+];
+
+async function fetchRssFeed(url: string, sourceName: string): Promise<NewsArticle[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const r = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; MetalPulse/1.0; +https://metalpulse.app)" },
+      signal: controller.signal,
+    });
+    if (!r.ok) throw new Error(`RSS ${r.status} from ${url}`);
+    const xml = await r.text();
+    const items = xml.split("<item>").slice(1);
+    return items.slice(0, 15).map((item) => {
+      const title = stripHtml(extractRssTag(item, "title"));
+      const description = stripHtml(extractRssTag(item, "description"));
+      const rawLink = extractRssTag(item, "link").trim();
+      const pubDate = extractRssTag(item, "pubDate").trim();
+      const summary = description.length > 220 ? description.slice(0, 220).replace(/\s+\S*$/, "") + "…" : description;
+      const sourceTag = extractRssTag(item, "source").trim() || sourceName;
+      return {
+        title,
+        summary,
+        link: rawLink,
+        source: sourceTag,
+        publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+      };
+    }).filter((a) => a.title && a.link);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function getNews(): Promise<NewsArticle[]> {
+  const now = Date.now();
+  if (newsCache && now - newsCache.ts < NEWS_CACHE_TTL_MS) return newsCache.articles;
+
+  let articles: NewsArticle[] = [];
+  for (const feed of NEWS_RSS_FEEDS) {
+    try {
+      articles = await fetchRssFeed(feed.url, feed.source);
+      if (articles.length > 0) break;
+    } catch (e) {
+      console.warn(`[news] Feed failed (${feed.url}):`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  if (articles.length === 0) throw new Error("All news feeds failed");
+  newsCache = { ts: now, articles };
+  return articles;
+}
+
 function parseStooqCsv(text: string): Array<{ date: string; close: number }> {
   const trimmed = text.trim();
   if (!trimmed) return [];
@@ -446,6 +528,15 @@ const server = http.createServer(async (req, res) => {
       try {
         const quotes = await fetchEtfQuotesFromTwelveData();
         return sendJson(res, 200, { etfs: quotes });
+      } catch (e) {
+        return sendJson(res, 503, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    if (requestUrl.pathname === "/api/news" && method === "GET") {
+      try {
+        const articles = await getNews();
+        return sendJson(res, 200, { articles });
       } catch (e) {
         return sendJson(res, 503, { error: e instanceof Error ? e.message : String(e) });
       }
