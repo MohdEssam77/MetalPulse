@@ -151,8 +151,4 @@ The chat uses Google Gemini. A default key can be set server-side via `GEMINI_AP
 
 The AI has access to the current news cache, so it can reference live headlines and links when answering questions about market news.
 
-## Contributing
 
-1. Fork the repo
-2. Create a feature branch
-3. Open a PR
