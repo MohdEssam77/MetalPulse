@@ -154,6 +154,6 @@ The AI has access to the current news cache, so it can reference live headlines 
 
 ## Contributing
 
-1. Fork the repository
+1. Fork the repo
 2. Create a feature branch
 3. Open a PR
