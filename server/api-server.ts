@@ -564,6 +564,70 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // ── AI chat sessions ──────────────────────────────────────────────────────
+    if (requestUrl.pathname === "/api/ai/sessions" && method === "GET") {
+      const userId = requestUrl.searchParams.get("userId");
+      if (!userId) return sendJson(res, 400, { error: "Missing userId" });
+      const { data, error } = await supabase
+        .from("ai_chat_sessions")
+        .select("id, title, created_at, updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(5);
+      if (error) return sendJson(res, 500, { error: error.message });
+      return sendJson(res, 200, { sessions: data ?? [] });
+    }
+
+    if (requestUrl.pathname === "/api/ai/sessions" && method === "POST") {
+      const body = await readJsonBody(req);
+      const b = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+      const userId = typeof b?.userId === "string" ? b.userId.trim() : null;
+      const title = typeof b?.title === "string" ? b.title.slice(0, 120).trim() : null;
+      const messages = Array.isArray(b?.messages) ? b.messages : null;
+      if (!userId || !title || !messages) return sendJson(res, 400, { error: "Invalid payload" });
+      const { data, error } = await supabase
+        .from("ai_chat_sessions")
+        .insert({ user_id: userId, title, messages })
+        .select("id, title, created_at")
+        .single();
+      if (error) return sendJson(res, 500, { error: error.message });
+      return sendJson(res, 201, { session: data });
+    }
+
+    const sessionById = requestUrl.pathname.match(/^\/api\/ai\/sessions\/([0-9a-f-]{36})$/i);
+    if (sessionById && method === "PUT") {
+      const id = sessionById[1]!;
+      const body = await readJsonBody(req);
+      const b = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+      const messages = Array.isArray(b?.messages) ? b.messages : null;
+      if (!messages) return sendJson(res, 400, { error: "Invalid payload" });
+      const update: Record<string, unknown> = { messages, updated_at: new Date().toISOString() };
+      if (typeof b?.title === "string") update.title = b.title.slice(0, 120).trim();
+      const { error } = await supabase.from("ai_chat_sessions").update(update).eq("id", id);
+      if (error) return sendJson(res, 500, { error: error.message });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (sessionById && method === "DELETE") {
+      const id = sessionById[1]!;
+      const { error } = await supabase.from("ai_chat_sessions").delete().eq("id", id);
+      if (error) return sendJson(res, 500, { error: error.message });
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // Also allow loading full session messages
+    if (sessionById && method === "GET") {
+      const id = sessionById[1]!;
+      const { data, error } = await supabase
+        .from("ai_chat_sessions")
+        .select("id, title, messages, created_at, updated_at")
+        .eq("id", id)
+        .single();
+      if (error) return sendJson(res, 500, { error: error.message });
+      return sendJson(res, 200, { session: data });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     if (requestUrl.pathname === "/api/news" && method === "GET") {
       try {
         const articles = await getNews();
