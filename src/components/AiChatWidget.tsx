@@ -135,7 +135,7 @@ export default function AiChatWidget() {
           </Button>
         </DialogTrigger>
 
-        <DialogContent className="w-[95vw] max-w-lg p-0 overflow-hidden rounded-2xl border border-border/60 shadow-2xl">
+        <DialogContent className="flex h-[80vh] w-[95vw] max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/60 p-0 shadow-2xl md:h-[85vh] md:w-[85vw] md:max-w-3xl lg:h-[90vh] lg:w-[80vw] lg:max-w-4xl">
           {/* Header */}
           <div className="flex items-center justify-between bg-gradient-to-r from-primary/10 to-primary/5 border-b border-border/60 px-4 py-3 pr-12">
             <div className="flex items-center gap-2">
@@ -229,7 +229,7 @@ export default function AiChatWidget() {
           </div>
 
           {/* Messages */}
-          <ScrollArea className="h-[55vh] px-4 py-4">
+          <ScrollArea className="flex-1 px-4 py-4">
             <div className="space-y-3">
               {messages.map((m, idx) => (
                 <div
